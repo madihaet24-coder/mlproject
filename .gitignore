@@ -34,6 +34,10 @@ htmlcov/
 # Streamlit
 .streamlit/
 
+# Node.js / Frontend
+node_modules/
+frontend/dist/
+
 # OS specific
 .DS_Store
 Thumbs.db

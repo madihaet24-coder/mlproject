@@ -1,0 +1,49 @@
+{
+  "model_type": "XGBRegressor",
+  "best_iteration": 119,
+  "train_samples": 24044,
+  "val_samples": 5188,
+  "feature_names": [
+    "lag_1h",
+    "lag_2h",
+    "lag_3h",
+    "lag_24h",
+    "lag_48h",
+    "lag_168h",
+    "rolling_mean_3h",
+    "rolling_std_3h",
+    "rolling_mean_6h",
+    "rolling_std_6h",
+    "rolling_mean_24h",
+    "rolling_std_24h",
+    "rolling_mean_168h",
+    "rolling_std_168h",
+    "hour",
+    "day_of_week",
+    "month",
+    "is_weekend",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos"
+  ],
+  "hyperparameters": {
+    "n_estimators": 500,
+    "learning_rate": 0.05,
+    "max_depth": 6,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "early_stopping_rounds": 25,
+    "random_state": 42
+  },
+  "train_metrics": {
+    "mae": 0.32503468291858684,
+    "rmse": 0.4817087312138706,
+    "r2": 0.7279679445767592
+  },
+  "val_metrics": {
+    "mae": 0.3663008096593175,
+    "rmse": 0.5297933524792109,
+    "r2": 0.648550075544365
+  }
+}

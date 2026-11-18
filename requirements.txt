@@ -6,9 +6,8 @@ scikit-learn>=1.3.0
 xgboost>=2.0.0
 pyarrow>=17.0.0,<18.0.0
 
-# Visualization and Web App
+# Visualization and API Bridge
 plotly>=5.18.0
-streamlit>=1.32.0
 
 # Model persistence & Data Validation
 joblib>=1.3.0

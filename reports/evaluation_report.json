@@ -1,0 +1,105 @@
+{
+  "generated_at": "2026-11-18T23:37:26.842741",
+  "forecasting_metrics": {
+    "mae": 0.31224317517504835,
+    "rmse": 0.4559830815532981,
+    "r2": 0.5787462573806319
+  },
+  "adaptive_detector": {
+    "overall": {
+      "precision": 0.0798,
+      "recall": 0.8871,
+      "f1_score": 0.1465,
+      "false_alarms_per_day": 2.9324,
+      "true_positives": 55,
+      "false_positives": 634,
+      "false_negatives": 7
+    },
+    "controlled_benchmark": {
+      "precision": 0.6111,
+      "recall": 0.8871,
+      "f1_score": 0.7237,
+      "false_alarms_per_day": 3.1343,
+      "true_positives": 55,
+      "false_positives": 35,
+      "false_negatives": 7
+    },
+    "event_level": {
+      "total_events": 9,
+      "detected_events": 9,
+      "event_detection_rate": 1.0,
+      "average_detection_delay_hours": 0.11
+    },
+    "per_scenario": {
+      "temporary_spike": {
+        "anomalous_samples": 8,
+        "detected_samples": 8,
+        "recall": 1.0
+      },
+      "repeated_spikes": {
+        "anomalous_samples": 6,
+        "detected_samples": 6,
+        "recall": 1.0
+      },
+      "sudden_drop": {
+        "anomalous_samples": 12,
+        "detected_samples": 5,
+        "recall": 0.4167
+      },
+      "sustained_shift": {
+        "anomalous_samples": 36,
+        "detected_samples": 36,
+        "recall": 1.0
+      }
+    }
+  },
+  "fixed_baseline": {
+    "overall": {
+      "precision": 0.4771,
+      "recall": 0.8387,
+      "f1_score": 0.6082,
+      "false_alarms_per_day": 0.2636,
+      "true_positives": 52,
+      "false_positives": 57,
+      "false_negatives": 10
+    },
+    "controlled_benchmark": {
+      "precision": 0.9455,
+      "recall": 0.8387,
+      "f1_score": 0.8889,
+      "false_alarms_per_day": 0.2687,
+      "true_positives": 52,
+      "false_positives": 3,
+      "false_negatives": 10
+    },
+    "event_level": {
+      "total_events": 9,
+      "detected_events": 9,
+      "event_detection_rate": 1.0,
+      "average_detection_delay_hours": 0.22
+    },
+    "per_scenario": {
+      "temporary_spike": {
+        "anomalous_samples": 8,
+        "detected_samples": 8,
+        "recall": 1.0
+      },
+      "repeated_spikes": {
+        "anomalous_samples": 6,
+        "detected_samples": 6,
+        "recall": 1.0
+      },
+      "sudden_drop": {
+        "anomalous_samples": 12,
+        "detected_samples": 2,
+        "recall": 0.1667
+      },
+      "sustained_shift": {
+        "anomalous_samples": 36,
+        "detected_samples": 36,
+        "recall": 1.0
+      }
+    },
+    "calibrated_threshold_kwh": 1.5146
+  }
+}
