@@ -50,15 +50,15 @@ function parseCsvRows(filePath) {
 
 function parseAnomaliesCsv(limit = 500) {
   const rawRows = parseCsvRows(path.join(REPORTS_DIR, "detected_anomalies.csv"));
-  if (!rawRows.length) return { total: 0, anomalyCount: 0, rows: [] };
+  if (!rawRows.length) return { total: 0, anomalyCount: 0, rows: [], flaggedRows: [] };
 
   let anomalyCount = 0;
+  const flaggedRows = [];
   const parsed = rawRows.map((obj) => {
     const isAnom = obj.is_anomaly === "True" || obj.is_anomaly === "true";
-    if (isAnom) anomalyCount += 1;
     const thr = parseFloat(obj.threshold);
     const sc = parseFloat(obj.score);
-    return {
+    const item = {
       timestamp: obj.timestamp,
       actual: parseFloat(obj.actual),
       predicted: parseFloat(obj.predicted),
@@ -70,13 +70,28 @@ function parseAnomaliesCsv(limit = 500) {
       event_id: parseInt(obj.event_id || "0", 10),
       is_event_alert: obj.is_event_alert === "True" || obj.is_event_alert === "true",
     };
+    if (isAnom) {
+      anomalyCount += 1;
+      flaggedRows.push(item);
+    }
+    return item;
   });
 
-  const sliced = limit > 0 ? parsed.slice(-limit) : parsed;
+  let sliced;
+  if (limit > 0) {
+    sliced = parsed.slice(-limit);
+  } else if (parsed.length > 1200) {
+    const step = Math.max(1, Math.floor(parsed.length / 1000));
+    sliced = parsed.filter((row, idx) => idx % step === 0 || row.is_anomaly || idx === parsed.length - 1);
+  } else {
+    sliced = parsed;
+  }
+
   return {
     total: parsed.length,
     anomalyCount,
     rows: sliced,
+    flaggedRows,
   };
 }
 
@@ -181,6 +196,7 @@ app.get("/api/anomalies", async (req, res) => {
       beforeFlaggedHours: bva.flagged_hours_before ?? null,
       beforeEventsCount: bva.grouped_events_before ?? null,
       events,
+      flaggedRows: data.flaggedRows,
       rows: data.rows,
     });
   }

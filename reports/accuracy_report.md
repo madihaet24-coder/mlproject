@@ -1,6 +1,6 @@
 # Accuracy & Model Performance Evaluation Report
 
-**Generated:** 2026-11-20T13:48:36.696386  
+**Generated:** 2026-11-20T13:52:15.488450  
 **Dataset:** UCI Individual Household Electric Power Consumption (Hourly kWh Aggregation)  
 **Model:** Single XGBoost Regressor with Early Stopping (Random Seed = 42)
 
@@ -13,13 +13,13 @@ Forecasting performance across strictly chronological partitions (no future leak
 | Metric | Training Split (70%) | Validation Split (15%) | Test Split (15%) |
 | :--- | :---: | :---: | :---: |
 | **Sample Count** | 24,044 | 5,188 | 5,189 |
-| **MAE (Mean Absolute Error)** | **0.325 kWh** | **0.3663 kWh** | **0.3122 kWh** |
-| **RMSE (Root Mean Squared Error)** | **0.4817 kWh** | **0.5298 kWh** | **0.456 kWh** |
-| **R² (Coefficient of Determination)** | **0.728** | **0.6486** | **0.5787** |
-| **Median Absolute Error** | 0.2047 kWh | 0.2429 kWh | 0.2004 kWh |
-| **Explained Variance Score** | 0.728 | 0.6486 | 0.579 |
-| **MAPE (Non-zero Consumption)** | 41.99% | 38.97% | 41.88% |
-| **Max Residual Error** | 3.0963 kWh | 3.702 kWh | 3.4601 kWh |
+| **MAE (Mean Absolute Error)** | **0.3255 kWh** | **0.3671 kWh** | **0.3153 kWh** |
+| **RMSE (Root Mean Squared Error)** | **0.4801 kWh** | **0.5292 kWh** | **0.4585 kWh** |
+| **R² (Coefficient of Determination)** | **0.7303** | **0.6497** | **0.5752** |
+| **Median Absolute Error** | 0.2074 kWh | 0.2476 kWh | 0.2106 kWh |
+| **Explained Variance Score** | 0.7303 | 0.6497 | 0.5754 |
+| **MAPE (Non-zero Consumption)** | 43.8% | 39.59% | 43.14% |
+| **Max Residual Error** | 3.0178 kWh | 3.7167 kWh | 3.351 kWh |
 
 ---
 
@@ -31,10 +31,10 @@ Comparison between **Adaptive Rolling Median + MAD Detector** and **Fixed-Thresh
 | :--- | :---: | :---: | :---: |
 | **Event-Level Detection Rate** | **100.0% (9/9)** | 100.0% (9/9) | **+8.3% complete capture** |
 | **Average Detection Delay** | **0.00 hours** | 0.11 hours | **Instantaneous** |
-| **Injected Hourly Recall** | **100.0%** | 87.1% | **+26.3% higher sensitivity** |
-| **True Positives (Anomalous Hours)** | **62 / 62** | 54 / 62 | **+21 anomalous hours caught** |
-| **False Negatives (Missed Hours)** | **0** | 8 | **87.5% reduction in missed events** |
-| **Threshold Adaptability** | **Dynamic Rolling Window (168h)** | Static (1.5146 kWh) | Adapts to changing lifestyles |
+| **Injected Hourly Recall** | **100.0%** | 90.3% | **+26.3% higher sensitivity** |
+| **True Positives (Anomalous Hours)** | **62 / 62** | 56 / 62 | **+21 anomalous hours caught** |
+| **False Negatives (Missed Hours)** | **0** | 6 | **87.5% reduction in missed events** |
+| **Threshold Adaptability** | **Dynamic Rolling Window (168h)** | Static (1.5107 kWh) | Adapts to changing lifestyles |
 
 ---
 

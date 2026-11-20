@@ -1,9 +1,9 @@
 {
-  "validation_timestamp": "2026-11-20T13:47:56.227206",
+  "validation_timestamp": "2026-11-20T13:54:35.350720",
   "overall_status": "PASSED",
   "file_info": {
-    "file_path": "C:\\Users\\ayush\\Desktop\\ML EL madiha\\data\\processed\\hourly_electricity_consumption.csv",
-    "file_size_bytes": 4025521,
+    "file_path": "C:\\Users\\ayush\\Desktop\\ML EL madiha\\data\\processed\\custom\\custom_hourly_electricity_synthetic_var_20261120_135120.csv",
+    "file_size_bytes": 1470068,
     "total_hourly_records": 34589,
     "time_span_start": "2006-12-16 17:00:00",
     "time_span_end": "2010-11-26 21:00:00",
@@ -15,12 +15,6 @@
     "present_columns": [
       "Datetime",
       "Global_active_power",
-      "Global_reactive_power",
-      "Voltage",
-      "Global_intensity",
-      "Sub_metering_1",
-      "Sub_metering_2",
-      "Sub_metering_3",
       "valid_minute_count"
     ],
     "missing_columns": []
@@ -34,11 +28,11 @@
   "consumption_range_checks": {
     "target_column": "Global_active_power",
     "units": "Kilowatt-hours (kWh)",
-    "min_kwh": 0.124,
-    "max_kwh": 6.5605,
-    "mean_kwh": 1.0916,
-    "median_kwh": 0.8027,
-    "std_kwh": 0.8976,
+    "min_kwh": 0.0272,
+    "max_kwh": 6.5554,
+    "mean_kwh": 1.0913,
+    "median_kwh": 0.8002,
+    "std_kwh": 0.8984,
     "negative_values_count": 0,
     "excessive_values_count_gt_15kw": 0,
     "passes_range_checks": true

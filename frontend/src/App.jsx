@@ -38,10 +38,12 @@ export default function App() {
     anomalyCount: 0,
     groupedEventsCount: 0,
     events: [],
+    flaggedRows: [],
     rows: [],
   });
   const [anomWindow, setAnomWindow] = useState(500);
   const [anomK, setAnomK] = useState(4.0);
+  const [anomRollingWin, setAnomRollingWin] = useState(168);
   const [anomLoading, setAnomLoading] = useState(false);
   const [anomFilter, setAnomFilter] = useState("All");
   const [anomViewMode, setAnomViewMode] = useState("events");
@@ -65,20 +67,24 @@ export default function App() {
     const data = await res.json();
     setOverview(data);
     const selectedK = data?.evaluation?.detector_config?.sensitivity_k ?? 4.0;
+    const selectedWin = data?.evaluation?.detector_config?.window_size ?? 168;
     setAnomK(selectedK);
+    setAnomRollingWin(selectedWin);
     const totalHrs = data?.validation?.file_info?.total_hourly_records || 34589;
     const safeStart = Math.max(180, Math.min(totalHrs - 48, Math.floor(totalHrs * 0.85)));
     setSimStartIdx(safeStart);
-    return { data, selectedK, safeStart };
+    return { data, selectedK, selectedWin, safeStart };
   };
 
-  const fetchAnomalies = async (limit, kVal) => {
+  const fetchAnomalies = async (limit, kVal, winVal = anomRollingWin) => {
     setAnomLoading(true);
     try {
-      const res = await fetch(`/api/anomalies?limit=${limit}&k=${kVal}&_t=${Date.now()}`, {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/anomalies?limit=${limit}&k=${kVal}&window=${winVal}&_t=${Date.now()}`,
+        { cache: "no-store" }
+      );
       const data = await res.json();
+      if (!res.ok || !data || !Array.isArray(data.rows)) return;
       setAnomalyData(data);
     } catch (err) {
       console.error("Failed to fetch anomalies:", err);
@@ -127,11 +133,11 @@ export default function App() {
   const refreshAllForActiveDataset = async (isInitialLoad = false) => {
     if (isInitialLoad) setLoading(true);
     try {
-      const { selectedK, safeStart } = await fetchOverview();
+      const { selectedK, selectedWin, safeStart } = await fetchOverview();
       await Promise.all([
         fetchDatasets(),
         fetchProfiles(),
-        fetchAnomalies(anomWindow, selectedK),
+        fetchAnomalies(anomWindow, selectedK, selectedWin),
         runSimulation(safeStart, simHorizon),
       ]);
     } catch (err) {
@@ -147,9 +153,9 @@ export default function App() {
 
   useEffect(() => {
     if (!loading && activeTab === "anomalies") {
-      fetchAnomalies(anomWindow, anomK);
+      fetchAnomalies(anomWindow, anomK, anomRollingWin);
     }
-  }, [anomWindow, anomK]);
+  }, [activeTab, anomWindow, anomK, anomRollingWin]);
 
   const handleSelectFile = (e) => {
     const file = e.target.files?.[0];
@@ -291,12 +297,23 @@ export default function App() {
   const simMinIdx = Math.max(180, Math.floor(totalHourlyRecords * 0.85));
   const simMaxIdx = Math.max(simMinIdx + 1, totalHourlyRecords - 48);
 
-  const filteredAnomalies = (anomalyData.rows || []).filter(
+  const allFlaggedRows =
+    Array.isArray(anomalyData.flaggedRows) && anomalyData.flaggedRows.length >= 0
+      ? anomalyData.flaggedRows
+      : (anomalyData.rows || []).filter((r) => r.is_anomaly);
+  const filteredAnomalies = allFlaggedRows.filter(
     (r) => r.is_anomaly && (anomFilter === "All" || r.anomaly_type === anomFilter)
   );
   const filteredEvents = (anomalyData.events || []).filter(
     (ev) => anomFilter === "All" || ev.anomaly_type === anomFilter
   );
+  const anomStreamRows = anomalyData.rows || [];
+  const meanWindowThreshold = anomStreamRows.length
+    ? anomStreamRows.reduce((acc, r) => acc + Number(r.threshold || 0), 0) / anomStreamRows.length
+    : 0;
+  const meanWindowResidual = anomStreamRows.length
+    ? anomStreamRows.reduce((acc, r) => acc + Number(r.residual || 0), 0) / anomStreamRows.length
+    : 0;
 
   return (
     <div className="app-shell">
@@ -856,17 +873,52 @@ export default function App() {
             {/* ANOMALIES STUDIO TAB */}
             {activeTab === "anomalies" && (
               <>
+                <div className="kpi-grid">
+                  <div className="kpi-card">
+                    <div className="kpi-label">Flagged Hours (k={anomK.toFixed(1)})</div>
+                    <div className="kpi-value">{anomalyData.anomalyCount ?? 0}</div>
+                    <div className="kpi-sub">
+                      {anomalyData.ratePercent ?? 0}% of {anomalyData.total ?? 0}h
+                      {anomalyData.beforeFlaggedHours
+                        ? ` (vs ${anomalyData.beforeFlaggedHours}h Legacy)`
+                        : ""}
+                    </div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Grouped Events</div>
+                    <div className="kpi-value">{anomalyData.groupedEventsCount ?? 0}</div>
+                    <div className="kpi-sub">
+                      {anomalyData.beforeEventsCount
+                        ? `Down from ${anomalyData.beforeEventsCount} Legacy events`
+                        : "1 alert per contiguous event"}
+                    </div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">MAD Parameters</div>
+                    <div className="kpi-value">
+                      k={anomK.toFixed(1)} · {anomRollingWin}h
+                    </div>
+                    <div className="kpi-sub">
+                      Floor: {anomalyData.min_residual_kwh ?? 0.65} kWh · Persist: {anomalyData.persistence ?? 2}h
+                    </div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Mean Threshold</div>
+                    <div className="kpi-value">{meanWindowThreshold.toFixed(2)} kWh</div>
+                    <div className="kpi-sub">
+                      Mean Error: {meanWindowResidual.toFixed(2)} kWh in view
+                    </div>
+                  </div>
+                </div>
+
                 <div className="card">
                   <div className="card-header">
                     <div>
                       <div className="card-title">Adaptive Anomaly Detection Studio</div>
                       <div className="card-subtitle">
                         {anomLoading
-                          ? "Evaluating selected k..."
-                          : `${anomalyData.anomalyCount} flagged hours (${anomalyData.ratePercent ?? 0}%) grouped into ${anomalyData.groupedEventsCount ?? 0} anomaly events`}
-                        {anomalyData.beforeFlaggedHours
-                          ? ` · Legacy k=3.0 flagged ${anomalyData.beforeFlaggedHours}h (${anomalyData.beforeEventsCount} events)`
-                          : ""}
+                          ? "Evaluating detector parameters..."
+                          : `Showing ${anomWindow > 0 ? `last ${anomWindow}h` : "full test stream"} · ${anomalyData.anomalyCount ?? 0} flagged hours (${anomalyData.groupedEventsCount ?? 0} grouped events)`}
                       </div>
                     </div>
                     <div className="pill-row">
@@ -881,11 +933,11 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Sensitivity k & Window Controls */}
+                  {/* Sensitivity k, Rolling Window & Display Window Controls */}
                   <div className="panel-grid equal-two" style={{ marginBottom: 14 }}>
                     <div className="input-group">
                       <label>
-                        MAD Sensitivity (k) — Compare Detection Results ({anomalyData.window_size || 168}h Window, Floor {anomalyData.min_residual_kwh ?? 0.65} kWh)
+                        MAD Sensitivity (k) — Compare Flagged Hours &amp; Events
                       </label>
                       <div className="pill-row">
                         {CANDIDATE_K.map((kVal) => (
@@ -893,6 +945,7 @@ export default function App() {
                             key={kVal}
                             className={`pill-btn ${Math.abs(anomK - kVal) < 1e-6 ? "active" : ""}`}
                             onClick={() => setAnomK(kVal)}
+                            disabled={anomLoading}
                           >
                             k = {kVal.toFixed(1)}
                             {Math.abs(kVal - detectorCfg.sensitivity_k) < 1e-6 ? " (Selected)" : ""}
@@ -901,24 +954,49 @@ export default function App() {
                       </div>
                     </div>
                     <div className="input-group">
-                      <label>Display Window</label>
+                      <label>Rolling Baseline Window &amp; Chart Span</label>
                       <div className="pill-row">
-                        {[250, 500, 1000].map((w) => (
+                        {[72, 168, 336].map((rw) => (
                           <button
-                            key={w}
-                            className={`pill-btn ${anomWindow === w ? "active" : ""}`}
-                            onClick={() => setAnomWindow(w)}
+                            key={rw}
+                            className={`pill-btn ${anomRollingWin === rw ? "active" : ""}`}
+                            onClick={() => setAnomRollingWin(rw)}
+                            disabled={anomLoading}
                           >
-                            Last {w}h
+                            {rw}h MAD
+                          </button>
+                        ))}
+                        {[
+                          [250, "250h"],
+                          [500, "500h"],
+                          [1000, "1000h"],
+                          [0, "Full"],
+                        ].map(([wVal, wLabel]) => (
+                          <button
+                            key={wVal}
+                            className={`pill-btn ${anomWindow === wVal ? "active" : ""}`}
+                            onClick={() => setAnomWindow(wVal)}
+                            disabled={anomLoading}
+                          >
+                            {wLabel}
                           </button>
                         ))}
                       </div>
                     </div>
                   </div>
 
-                  <ForecastLineChart data={anomalyData.rows} height={240} showAnomalies />
-                  <div style={{ height: 12 }} />
-                  <ResidualThresholdChart data={anomalyData.rows} height={190} />
+                  <ForecastLineChart
+                    data={anomStreamRows}
+                    height={250}
+                    showAnomalies
+                    activeFilter={anomFilter}
+                  />
+                  <div style={{ height: 14 }} />
+                  <ResidualThresholdChart
+                    data={anomStreamRows}
+                    height={210}
+                    activeFilter={anomFilter}
+                  />
                 </div>
 
                 <div className="card">
@@ -930,7 +1008,7 @@ export default function App() {
                           : `Flagged Hourly Readings (${filteredAnomalies.length})`}
                       </div>
                       <div className="card-subtitle">
-                        Consecutive flagged hours are grouped into a single alert event
+                        Consecutive flagged hours are grouped into a single alert event; category filters update both charts and tables
                       </div>
                     </div>
                     <div className="pill-row">
@@ -938,13 +1016,13 @@ export default function App() {
                         className={`pill-btn ${anomViewMode === "events" ? "active" : ""}`}
                         onClick={() => setAnomViewMode("events")}
                       >
-                        Grouped Events
+                        Grouped Events ({filteredEvents.length})
                       </button>
                       <button
                         className={`pill-btn ${anomViewMode === "hours" ? "active" : ""}`}
                         onClick={() => setAnomViewMode("hours")}
                       >
-                        Hourly Details
+                        Hourly Details ({filteredAnomalies.length})
                       </button>
                     </div>
                   </div>
@@ -962,80 +1040,93 @@ export default function App() {
                   </div>
 
                   {anomViewMode === "events" ? (
-                    <>
-                      {/* Mobile Event Cards */}
-                      <div className="mobile-event-list">
-                        {filteredEvents.slice(-30).reverse().map((ev) => (
-                          <div className="mobile-event-card" key={ev.event_id}>
-                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                              <strong style={{ fontSize: 12 }}>
-                                Event #{ev.event_id} · {ev.duration_hours}h
-                              </strong>
-                              <span className="badge badge-danger">{ev.anomaly_type}</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: "#475569" }}>
-                              {ev.start_timestamp} → {ev.end_timestamp.slice(11, 16)}
-                            </div>
-                            <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                              Peak: <strong>{ev.peak_actual.toFixed(2)} kWh</strong> (Pred avg:{" "}
-                              {ev.mean_predicted.toFixed(2)}) · Max Residual: {ev.peak_residual.toFixed(2)} vs{" "}
-                              {ev.threshold_at_peak.toFixed(2)} kWh
-                            </div>
-                          </div>
-                        ))}
+                    filteredEvents.length === 0 ? (
+                      <div className="card-subtitle">
+                        No grouped anomaly events match "{anomFilter}" at k = {anomK.toFixed(1)}.
                       </div>
+                    ) : (
+                      <>
+                        {/* Mobile Event Cards */}
+                        <div className="mobile-event-list">
+                          {filteredEvents.slice(-30).reverse().map((ev) => (
+                            <div className="mobile-event-card" key={ev.event_id}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                                <strong style={{ fontSize: 12 }}>
+                                  Event #{ev.event_id} · {ev.duration_hours}h
+                                </strong>
+                                <span className="badge badge-danger">{ev.anomaly_type}</span>
+                              </div>
+                              <div style={{ fontSize: 12, color: "#475569" }}>
+                                {ev.start_timestamp} → {String(ev.end_timestamp || "").slice(11, 16)}
+                              </div>
+                              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                                Peak: <strong>{Number(ev.peak_actual ?? 0).toFixed(2)} kWh</strong> (Pred avg:{" "}
+                                {Number(ev.mean_predicted ?? 0).toFixed(2)}) · Max Residual:{" "}
+                                {Number(ev.peak_residual ?? 0).toFixed(2)} vs{" "}
+                                {Number(ev.threshold_at_peak ?? 0).toFixed(2)} kWh
+                              </div>
+                            </div>
+                          ))}
+                        </div>
 
-                      {/* Desktop Events Table */}
-                      <div className="desktop-table-only table-wrap">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Event #</th>
-                              <th>Start Time</th>
-                              <th>End Time</th>
-                              <th>Duration</th>
-                              <th>Type</th>
-                              <th>Peak Actual</th>
-                              <th>Avg Forecast</th>
-                              <th>Peak Residual</th>
-                              <th>Threshold</th>
-                              <th>Peak Score</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredEvents.slice(-40).reverse().map((ev) => (
-                              <tr key={ev.event_id}>
-                                <td><strong>#{ev.event_id}</strong></td>
-                                <td>{ev.start_timestamp}</td>
-                                <td>{ev.end_timestamp}</td>
-                                <td>{ev.duration_hours}h</td>
-                                <td><span className="badge badge-danger">{ev.anomaly_type}</span></td>
-                                <td>{ev.peak_actual.toFixed(3)} kWh</td>
-                                <td>{ev.mean_predicted.toFixed(3)} kWh</td>
-                                <td>{ev.peak_residual.toFixed(3)} kWh</td>
-                                <td>{ev.threshold_at_peak.toFixed(3)} kWh</td>
-                                <td>{ev.peak_score.toFixed(2)}</td>
+                        {/* Desktop Events Table */}
+                        <div className="desktop-table-only table-wrap">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Event #</th>
+                                <th>Start Time</th>
+                                <th>End Time</th>
+                                <th>Duration</th>
+                                <th>Type</th>
+                                <th>Peak Actual</th>
+                                <th>Avg Forecast</th>
+                                <th>Peak Residual</th>
+                                <th>Threshold</th>
+                                <th>Peak Score</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
+                            </thead>
+                            <tbody>
+                              {filteredEvents.slice(-60).reverse().map((ev) => (
+                                <tr key={ev.event_id}>
+                                  <td><strong>#{ev.event_id}</strong></td>
+                                  <td>{ev.start_timestamp}</td>
+                                  <td>{ev.end_timestamp}</td>
+                                  <td>{ev.duration_hours}h</td>
+                                  <td><span className="badge badge-danger">{ev.anomaly_type}</span></td>
+                                  <td>{Number(ev.peak_actual ?? 0).toFixed(3)} kWh</td>
+                                  <td>{Number(ev.mean_predicted ?? 0).toFixed(3)} kWh</td>
+                                  <td>{Number(ev.peak_residual ?? 0).toFixed(3)} kWh</td>
+                                  <td>{Number(ev.threshold_at_peak ?? 0).toFixed(3)} kWh</td>
+                                  <td>{Number(ev.peak_score ?? 0).toFixed(2)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )
+                  ) : filteredAnomalies.length === 0 ? (
+                    <div className="card-subtitle">
+                      No flagged hourly readings match "{anomFilter}" at k = {anomK.toFixed(1)}.
+                    </div>
                   ) : (
                     <>
                       {/* Mobile Hourly Cards */}
                       <div className="mobile-event-list">
-                        {filteredAnomalies.slice(-25).reverse().map((row, idx) => (
+                        {filteredAnomalies.slice(-30).reverse().map((row, idx) => (
                           <div className="mobile-event-card" key={idx}>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                               <strong style={{ fontSize: 12 }}>{row.timestamp}</strong>
                               <span className="badge badge-danger">{row.anomaly_type}</span>
                             </div>
                             <div style={{ fontSize: 12, color: "#475569" }}>
-                              Actual: <strong>{row.actual.toFixed(2)} kWh</strong> · Forecast: {row.predicted.toFixed(2)} kWh
+                              Actual: <strong>{Number(row.actual ?? 0).toFixed(2)} kWh</strong> · Forecast:{" "}
+                              {Number(row.predicted ?? 0).toFixed(2)} kWh
                             </div>
                             <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                              Residual: {row.residual.toFixed(2)} vs Threshold: {row.threshold.toFixed(2)} (z={row.score.toFixed(2)})
+                              Residual: {Number(row.residual ?? 0).toFixed(2)} vs Threshold:{" "}
+                              {Number(row.threshold ?? 0).toFixed(2)} (z={Number(row.score ?? 0).toFixed(2)})
                             </div>
                           </div>
                         ))}
@@ -1057,16 +1148,16 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredAnomalies.slice(-40).reverse().map((row, idx) => (
+                            {filteredAnomalies.slice(-60).reverse().map((row, idx) => (
                               <tr key={idx}>
                                 <td>{row.timestamp}</td>
                                 <td>#{row.event_id}</td>
                                 <td><span className="badge badge-danger">{row.anomaly_type}</span></td>
-                                <td>{row.actual.toFixed(3)}</td>
-                                <td>{row.predicted.toFixed(3)}</td>
-                                <td>{row.residual.toFixed(3)}</td>
-                                <td>{row.threshold.toFixed(3)}</td>
-                                <td>{row.score.toFixed(2)}</td>
+                                <td>{Number(row.actual ?? 0).toFixed(3)}</td>
+                                <td>{Number(row.predicted ?? 0).toFixed(3)}</td>
+                                <td>{Number(row.residual ?? 0).toFixed(3)}</td>
+                                <td>{Number(row.threshold ?? 0).toFixed(3)}</td>
+                                <td>{Number(row.score ?? 0).toFixed(2)}</td>
                               </tr>
                             ))}
                           </tbody>

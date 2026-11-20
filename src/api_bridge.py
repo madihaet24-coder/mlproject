@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from src.anomaly_detector import AdaptiveAnomalyDetector
-from src.config import AnomalyDetectorConfig, DataConfig
+from src.config import REPORTS_DIR, AnomalyDetectorConfig, DataConfig
 from src.data_loader import DataLoader
 from src.feature_engineering import FeatureEngineer
 from src.model_training import ModelTrainer
@@ -16,6 +16,16 @@ from src.preprocessing import Preprocessor
 
 
 def _load_test_predictions():
+    anom_csv = REPORTS_DIR / "detected_anomalies.csv"
+    if anom_csv.exists():
+        df_cached = pd.read_csv(anom_csv, usecols=["timestamp", "actual", "predicted"])
+        if not df_cached.empty:
+            return (
+                df_cached["actual"].to_numpy(dtype=float),
+                df_cached["predicted"].to_numpy(dtype=float),
+                pd.to_datetime(df_cached["timestamp"]),
+            )
+
     loader = DataLoader()
     df_hourly = loader.process_and_save()
     prep = Preprocessor()
@@ -32,6 +42,24 @@ def _load_test_predictions():
     trainer.load_model("xgboost_forecaster")
     preds_test = trainer.predict(X_test)
     return y_test.to_numpy(dtype=float), preds_test, ts_test
+
+
+def _serialize_rows(df_subset: pd.DataFrame) -> list[dict]:
+    return [
+        {
+            "timestamp": pd.to_datetime(r["timestamp"]).strftime("%Y-%m-%d %H:%M:%S"),
+            "actual": round(float(r["actual"]), 4),
+            "predicted": round(float(r["predicted"]), 4),
+            "residual": round(float(r["residual"]), 4),
+            "threshold": round(float(r["threshold"]), 4) if np.isfinite(r["threshold"]) else 0.0,
+            "score": round(float(r["score"]), 3) if np.isfinite(r["score"]) else 0.0,
+            "is_anomaly": bool(r["is_anomaly"]),
+            "anomaly_type": str(r["anomaly_type"]),
+            "event_id": int(r["event_id"]),
+            "is_event_alert": bool(r["is_event_alert"]),
+        }
+        for _, r in df_subset.iterrows()
+    ]
 
 
 def cmd_detect(k_val: float, window_size: int, limit: int) -> None:
@@ -51,22 +79,20 @@ def cmd_detect(k_val: float, window_size: int, limit: int) -> None:
     )
     legacy_events = AdaptiveAnomalyDetector.group_anomaly_events(legacy_res)
 
-    sliced = res_df.iloc[-limit:] if limit > 0 else res_df
-    rows = [
-        {
-            "timestamp": pd.to_datetime(r["timestamp"]).strftime("%Y-%m-%d %H:%M:%S"),
-            "actual": round(float(r["actual"]), 4),
-            "predicted": round(float(r["predicted"]), 4),
-            "residual": round(float(r["residual"]), 4),
-            "threshold": round(float(r["threshold"]), 4) if np.isfinite(r["threshold"]) else 0.0,
-            "score": round(float(r["score"]), 3) if np.isfinite(r["score"]) else 0.0,
-            "is_anomaly": bool(r["is_anomaly"]),
-            "anomaly_type": str(r["anomaly_type"]),
-            "event_id": int(r["event_id"]),
-            "is_event_alert": bool(r["is_event_alert"]),
-        }
-        for _, r in sliced.iterrows()
-    ]
+    if limit > 0:
+        sliced = res_df.iloc[-limit:]
+    elif len(res_df) > 1200:
+        step = max(1, len(res_df) // 1000)
+        keep_mask = np.zeros(len(res_df), dtype=bool)
+        keep_mask[::step] = True
+        keep_mask |= res_df["is_anomaly"].to_numpy(dtype=bool)
+        keep_mask[-1] = True
+        sliced = res_df.iloc[keep_mask]
+    else:
+        sliced = res_df
+
+    rows = _serialize_rows(sliced)
+    flagged_rows = _serialize_rows(res_df[res_df["is_anomaly"] == True])  # noqa: E712
 
     events = [
         {
@@ -103,6 +129,7 @@ def cmd_detect(k_val: float, window_size: int, limit: int) -> None:
                 "beforeFlaggedHours": int(legacy_res["is_anomaly"].sum()),
                 "beforeEventsCount": int(len(legacy_events)),
                 "events": events,
+                "flaggedRows": flagged_rows,
                 "rows": rows,
             }
         )

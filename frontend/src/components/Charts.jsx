@@ -7,7 +7,26 @@ function buildPath(points, xScale, yScale) {
     .join(" ");
 }
 
-export function ForecastLineChart({ data, height = 270, showAnomalies = false }) {
+function LegendItem({ color, label, dashed = false, dot = false }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "#475569", fontWeight: 600 }}>
+      {dot ? (
+        <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, border: "1.5px solid #ffffff", boxShadow: `0 0 0 1px ${color}` }} />
+      ) : (
+        <span
+          style={{
+            width: 18,
+            height: 0,
+            borderTop: `2.5px ${dashed ? "dashed" : "solid"} ${color}`,
+          }}
+        />
+      )}
+      {label}
+    </span>
+  );
+}
+
+export function ForecastLineChart({ data, height = 270, showAnomalies = false, activeFilter = "All" }) {
   const [hoverIdx, setHoverIdx] = useState(null);
 
   if (!data || data.length === 0) {
@@ -37,9 +56,15 @@ export function ForecastLineChart({ data, height = 270, showAnomalies = false })
   };
 
   const active = hoverIdx !== null ? data[hoverIdx] : null;
+  const matchesFilter = (d) => d.is_anomaly && (activeFilter === "All" || d.anomaly_type === activeFilter);
 
   return (
     <div className="chart-container">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 6 }}>
+        <LegendItem color="#0f3e72" label="Actual Consumption (kWh)" />
+        <LegendItem color="#0ea5e9" label="XGBoost Forecast (kWh)" dashed />
+        {showAnomalies && <LegendItem color="#ef4444" label="Detected Anomaly" dot />}
+      </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         style={{ width: "100%", height: "auto", display: "block", touchAction: "pan-y" }}
@@ -65,7 +90,7 @@ export function ForecastLineChart({ data, height = 270, showAnomalies = false })
 
         {showAnomalies &&
           data.map((d, idx) =>
-            d.is_anomaly ? (
+            matchesFilter(d) ? (
               <circle
                 key={idx}
                 cx={xScale(idx)}
@@ -98,10 +123,10 @@ export function ForecastLineChart({ data, height = 270, showAnomalies = false })
       </svg>
 
       {active && (
-        <div className="chart-tooltip" style={{ top: 10, right: 12 }}>
+        <div className="chart-tooltip" style={{ top: 26, right: 12 }}>
           <div><strong>{String(active.timestamp).slice(0, 16)}</strong></div>
-          <div>Actual: {Number(active.actual ?? active.actual_kwh).toFixed(3)} kWh</div>
-          <div>Forecast: {Number(active.predicted ?? active.forecast_kwh).toFixed(3)} kWh</div>
+          <div>Actual: {Number(active.actual ?? active.actual_kwh ?? 0).toFixed(3)} kWh</div>
+          <div>Forecast: {Number(active.predicted ?? active.forecast_kwh ?? 0).toFixed(3)} kWh</div>
           {active.is_anomaly && <div style={{ color: "#fca5a5" }}>Anomaly: {active.anomaly_type}</div>}
         </div>
       )}
@@ -109,12 +134,12 @@ export function ForecastLineChart({ data, height = 270, showAnomalies = false })
   );
 }
 
-export function ResidualThresholdChart({ data, height = 210 }) {
+export function ResidualThresholdChart({ data, height = 210, activeFilter = "All" }) {
   const [hoverIdx, setHoverIdx] = useState(null);
   if (!data || data.length === 0) return null;
 
   const width = 760;
-  const pad = { top: 14, right: 16, bottom: 26, left: 44 };
+  const pad = { top: 14, right: 16, bottom: 28, left: 44 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
 
@@ -133,9 +158,15 @@ export function ResidualThresholdChart({ data, height = 210 }) {
   };
 
   const active = hoverIdx !== null ? data[hoverIdx] : null;
+  const matchesFilter = (d) => d.is_anomaly && (activeFilter === "All" || d.anomaly_type === activeFilter);
 
   return (
     <div className="chart-container">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 6 }}>
+        <LegendItem color="#64748b" label="Absolute Forecast Error |y - ŷ| (kWh)" />
+        <LegendItem color="#f59e0b" label="Adaptive MAD Threshold Tₜ (kWh)" />
+        <LegendItem color="#ef4444" label="Threshold Violation" dot />
+      </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         style={{ width: "100%", height: "auto", display: "block", touchAction: "pan-y" }}
@@ -159,6 +190,20 @@ export function ResidualThresholdChart({ data, height = 210 }) {
         <path d={buildPath(resVals, xScale, yScale)} fill="none" stroke="#64748b" strokeWidth="1.5" />
         <path d={buildPath(thrVals, xScale, yScale)} fill="none" stroke="#f59e0b" strokeWidth="2.2" />
 
+        {data.map((d, idx) =>
+          matchesFilter(d) ? (
+            <circle
+              key={idx}
+              cx={xScale(idx)}
+              cy={yScale(resVals[idx])}
+              r="4"
+              fill="#ef4444"
+              stroke="#ffffff"
+              strokeWidth="1.2"
+            />
+          ) : null
+        )}
+
         {hoverIdx !== null && (
           <line
             x1={xScale(hoverIdx)}
@@ -169,12 +214,20 @@ export function ResidualThresholdChart({ data, height = 210 }) {
             strokeDasharray="3 3"
           />
         )}
+
+        <text x={pad.left} y={height - 6} fontSize="10" fill="#64748b">
+          {String(data[0].timestamp || "").slice(0, 16)}
+        </text>
+        <text x={width - pad.right} y={height - 6} fontSize="10" fill="#64748b" textAnchor="end">
+          {String(data[data.length - 1].timestamp || "").slice(0, 16)}
+        </text>
       </svg>
       {active && (
-        <div className="chart-tooltip" style={{ top: 8, right: 12 }}>
+        <div className="chart-tooltip" style={{ top: 24, right: 12 }}>
           <div><strong>{String(active.timestamp).slice(0, 16)}</strong></div>
-          <div>Residual: {Number(active.residual).toFixed(3)} kWh</div>
-          <div>MAD Threshold: {Number(active.threshold).toFixed(3)} kWh</div>
+          <div>Residual: {Number(active.residual || 0).toFixed(3)} kWh</div>
+          <div>MAD Threshold: {Number(active.threshold || 0).toFixed(3)} kWh</div>
+          {active.is_anomaly && <div style={{ color: "#fca5a5" }}>Flagged: {active.anomaly_type}</div>}
         </div>
       )}
     </div>
