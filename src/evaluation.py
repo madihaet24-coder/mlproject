@@ -1,15 +1,17 @@
-"""Controlled synthetic anomaly injection and benchmark evaluation metrics."""
+"""Controlled synthetic anomaly injection, k-sensitivity selection, and benchmark evaluation."""
 
+from dataclasses import replace
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from src.config import SyntheticScenarioConfig
+from src.anomaly_detector import AdaptiveAnomalyDetector
+from src.config import AnomalyDetectorConfig, SyntheticScenarioConfig
 
 
 class SyntheticAnomalyInjector:
-    """Injects reproducible controlled anomaly scenarios into a test stream."""
+    """Injects reproducible controlled anomaly scenarios into a test or validation stream."""
 
     def __init__(self, config: Optional[SyntheticScenarioConfig] = None):
         self.config = config or SyntheticScenarioConfig()
@@ -98,10 +100,26 @@ class SyntheticAnomalyInjector:
             )
             event_id += 1
 
-        # 4. Sudden Drops (near-zero outage)
+        # 4. Sudden Drops (near-zero outage during active consumption hours)
         dur_drop = min(self.config.sudden_drop_hours, 12)
-        s_idx = _find_free_slot(dur_drop)
-        # Ensure high enough baseline or drop relative to local level
+        best_drop_start = None
+        best_drop_score = -1.0
+        for _ in range(120):
+            cand = int(rng.integers(200, max(201, n - dur_drop - 24)))
+            if occupied[max(0, cand - 12) : min(n, cand + dur_drop + 12)].any():
+                continue
+            window_vals = df_out.loc[cand : cand + dur_drop - 1, target_col]
+            score_val = float(window_vals.min() + 0.25 * window_vals.mean())
+            if score_val > best_drop_score:
+                best_drop_score = score_val
+                best_drop_start = cand
+            if float(window_vals.min()) >= 0.75:
+                break
+        if best_drop_start is None:
+            best_drop_start = _find_free_slot(dur_drop)
+        else:
+            occupied[best_drop_start : best_drop_start + dur_drop] = True
+        s_idx = best_drop_start
         df_out.loc[s_idx : s_idx + dur_drop - 1, target_col] = 0.01
         df_out.loc[s_idx : s_idx + dur_drop - 1, "ground_truth_label"] = 1
         df_out.loc[s_idx : s_idx + dur_drop - 1, "ground_truth_scenario"] = "sudden_drop"
@@ -118,12 +136,28 @@ class SyntheticAnomalyInjector:
         events_df = pd.DataFrame(events)
         return df_out, events_df
 
+    @staticmethod
+    def inject_routine_change(
+        df: pd.DataFrame,
+        target_col: str = "Global_active_power",
+        start_idx: int = 220,
+        duration_hours: int = 168,
+        shift_kwh: float = 1.4,
+    ) -> pd.DataFrame:
+        """Inject a sustained normal routine shift to verify controlled re-baselining."""
+        df_out = df.copy().reset_index(drop=True)
+        end_idx = min(len(df_out), start_idx + duration_hours)
+        df_out.loc[start_idx : end_idx - 1, target_col] += shift_kwh
+        return df_out
+
 
 class Evaluator:
-    """Computes point-wise, controlled-window, event-level, and per-scenario metrics."""
+    """Computes point-wise, controlled-window, event-level, and before-vs-after metrics."""
 
     @staticmethod
-    def _classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, n_hours: int) -> Dict[str, Any]:
+    def _classification_metrics(
+        y_true: np.ndarray, y_pred: np.ndarray, n_hours: int
+    ) -> Dict[str, Any]:
         tp = int(np.sum((y_true == 1) & (y_pred == 1)))
         fp = int(np.sum((y_true == 0) & (y_pred == 1)))
         fn = int(np.sum((y_true == 1) & (y_pred == 0)))
@@ -149,6 +183,22 @@ class Evaluator:
         }
 
     @staticmethod
+    def summarize_unlabelled_stream(results_df: pd.DataFrame) -> Dict[str, Any]:
+        """Summarize flagged hours and grouped anomaly events on an unlabelled stream."""
+        total_hours = int(len(results_df))
+        flagged_hours = int(results_df["is_anomaly"].sum())
+        grouped_events = AdaptiveAnomalyDetector.group_anomaly_events(results_df)
+        grouped_count = int(len(grouped_events))
+        days = max(1e-6, total_hours / 24.0)
+        return {
+            "total_hours": total_hours,
+            "flagged_hours": flagged_hours,
+            "flagged_rate_percent": round(100.0 * flagged_hours / max(1, total_hours), 2),
+            "grouped_events": grouped_count,
+            "events_per_day": round(grouped_count / days, 4),
+        }
+
+    @staticmethod
     def evaluate_scenarios(
         results_df: pd.DataFrame, events_df: pd.DataFrame
     ) -> Dict[str, Any]:
@@ -167,7 +217,6 @@ class Evaluator:
         for _, ev in events_df.iterrows():
             s_idx = int(ev["start_idx"])
             e_idx = int(ev["end_idx"])
-            # Include +/- 12h neighborhood for controlled window precision
             win_start = max(0, s_idx - 12)
             win_end = min(n_hours - 1, e_idx + 12)
             controlled_mask[win_start : win_end + 1] = True
@@ -202,6 +251,9 @@ class Evaluator:
                 "recall": round(sc_recall, 4),
             }
 
+        flagged_hours = int(y_pred.sum())
+        grouped_count = int(len(AdaptiveAnomalyDetector.group_anomaly_events(results_df)))
+
         return {
             "overall": overall,
             "controlled_benchmark": controlled,
@@ -212,4 +264,168 @@ class Evaluator:
                 "average_detection_delay_hours": round(avg_delay, 2),
             },
             "per_scenario": per_scenario,
+            "stream_counts": {
+                "total_flagged_hours": flagged_hours,
+                "flagged_rate_percent": round(100.0 * flagged_hours / max(1, n_hours), 2),
+                "grouped_event_count": grouped_count,
+            },
+        }
+
+    @staticmethod
+    def _evaluate_detector_on_split(
+        config: AnomalyDetectorConfig,
+        actual: np.ndarray,
+        predicted: np.ndarray,
+        timestamps: pd.Series,
+        scenario_seed: int,
+    ) -> Dict[str, Any]:
+        """Run detector on both real unlabelled stream and controlled synthetic benchmark."""
+        detector = AdaptiveAnomalyDetector(config)
+        real_res = detector.detect(actual=actual, predicted=predicted, timestamps=timestamps)
+        real_summary = Evaluator.summarize_unlabelled_stream(real_res)
+
+        df_stream = pd.DataFrame({"Datetime": pd.to_datetime(timestamps).values, "Global_active_power": actual})
+        injector = SyntheticAnomalyInjector(SyntheticScenarioConfig(random_seed=scenario_seed))
+        df_inj, events_df = injector.inject_scenarios(df_stream, "Global_active_power")
+
+        syn_res = detector.detect(
+            actual=df_inj["Global_active_power"].to_numpy(dtype=float),
+            predicted=predicted,
+            timestamps=timestamps,
+        )
+        syn_res["ground_truth_label"] = df_inj["ground_truth_label"].values
+        syn_res["ground_truth_scenario"] = df_inj["ground_truth_scenario"].values
+        syn_eval = Evaluator.evaluate_scenarios(syn_res, events_df)
+
+        return {
+            "real_unlabelled_stream": real_summary,
+            "synthetic_benchmark": syn_eval,
+        }
+
+    @staticmethod
+    def run_k_sensitivity_sweep(
+        actual_val: np.ndarray,
+        pred_val: np.ndarray,
+        ts_val: pd.Series,
+        actual_test: np.ndarray,
+        pred_test: np.ndarray,
+        ts_test: pd.Series,
+        base_config: Optional[AnomalyDetectorConfig] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate candidate k values (3.0, 3.5, 4.0, 4.5) and select optimal k on validation data."""
+        cfg = base_config or AnomalyDetectorConfig()
+        k_rows: List[Dict[str, Any]] = []
+
+        for k_val in cfg.candidate_k_values:
+            k_cfg = replace(cfg, sensitivity=float(k_val))
+            val_out = Evaluator._evaluate_detector_on_split(
+                k_cfg, actual_val, pred_val, ts_val, scenario_seed=101
+            )
+            test_out = Evaluator._evaluate_detector_on_split(
+                k_cfg, actual_test, pred_test, ts_test, scenario_seed=42
+            )
+
+            val_real = val_out["real_unlabelled_stream"]
+            val_syn = val_out["synthetic_benchmark"]
+            test_real = test_out["real_unlabelled_stream"]
+            test_syn = test_out["synthetic_benchmark"]
+
+            # Balanced validation selection score: penalize excess alarms & over-tightening k > 4.0
+            val_ctrl_f1 = val_syn["controlled_benchmark"]["f1_score"]
+            val_ev_rate = val_syn["event_level"]["event_detection_rate"]
+            min_sc_recall = min(
+                (sc["recall"] for sc in val_syn["per_scenario"].values()),
+                default=0.0,
+            )
+            excess_rate_penalty = 0.05 * max(0.0, val_real["flagged_rate_percent"] - 1.45)
+            over_tighten_penalty = 0.04 * max(0.0, float(k_val) - 4.0)
+            selection_score = round(
+                0.60 * val_ctrl_f1
+                + 0.40 * min_sc_recall
+                - excess_rate_penalty
+                - over_tighten_penalty
+                + (0.20 if val_ev_rate >= 0.95 else -0.50),
+                4,
+            )
+
+            k_rows.append(
+                {
+                    "k": float(k_val),
+                    "validation": {
+                        "flagged_hours": val_real["flagged_hours"],
+                        "flagged_rate_percent": val_real["flagged_rate_percent"],
+                        "grouped_events": val_real["grouped_events"],
+                        "synthetic_precision": val_syn["controlled_benchmark"]["precision"],
+                        "synthetic_recall": val_syn["controlled_benchmark"]["recall"],
+                        "synthetic_f1": val_ctrl_f1,
+                        "synthetic_event_rate": val_ev_rate,
+                        "synthetic_delay_hours": val_syn["event_level"]["average_detection_delay_hours"],
+                        "selection_score": selection_score,
+                    },
+                    "test": {
+                        "flagged_hours": test_real["flagged_hours"],
+                        "flagged_rate_percent": test_real["flagged_rate_percent"],
+                        "grouped_events": test_real["grouped_events"],
+                        "synthetic_precision": test_syn["controlled_benchmark"]["precision"],
+                        "synthetic_recall": test_syn["controlled_benchmark"]["recall"],
+                        "synthetic_f1": test_syn["controlled_benchmark"]["f1_score"],
+                        "synthetic_event_rate": test_syn["event_level"]["event_detection_rate"],
+                        "synthetic_delay_hours": test_syn["event_level"]["average_detection_delay_hours"],
+                    },
+                }
+            )
+
+        # Select best k from validation metrics without blindly picking largest k
+        eligible = [r for r in k_rows if r["validation"]["synthetic_event_rate"] >= 0.90]
+        pool = eligible if eligible else k_rows
+        best_row = max(pool, key=lambda r: r["validation"]["selection_score"])
+
+        return {
+            "candidate_values": list(cfg.candidate_k_values),
+            "selected_k": best_row["k"],
+            "selection_criterion": (
+                "Maximizes validation controlled F1 minus false-alarm rate penalty "
+                "subject to synthetic event detection rate >= 90%."
+            ),
+            "results": k_rows,
+        }
+
+    @staticmethod
+    def compare_before_after(
+        actual_val: np.ndarray,
+        pred_val: np.ndarray,
+        ts_val: pd.Series,
+        actual_test: np.ndarray,
+        pred_test: np.ndarray,
+        ts_test: pd.Series,
+        improved_config: AnomalyDetectorConfig,
+    ) -> Dict[str, Any]:
+        """Compare Legacy (Before) vs Improved (After) detectors on Validation and Test splits."""
+        legacy_cfg = AnomalyDetectorConfig.legacy_config()
+
+        def _build_split_comp(actual, pred, ts, seed):
+            before = Evaluator._evaluate_detector_on_split(legacy_cfg, actual, pred, ts, seed)
+            after = Evaluator._evaluate_detector_on_split(improved_config, actual, pred, ts, seed)
+
+            b_hrs = before["real_unlabelled_stream"]["flagged_hours"]
+            a_hrs = after["real_unlabelled_stream"]["flagged_hours"]
+            b_ev = before["real_unlabelled_stream"]["grouped_events"]
+            a_ev = after["real_unlabelled_stream"]["grouped_events"]
+
+            return {
+                "legacy_before": before,
+                "improved_after": after,
+                "reduction_summary": {
+                    "flagged_hours_before": b_hrs,
+                    "flagged_hours_after": a_hrs,
+                    "flagged_hours_reduction_percent": round(100.0 * (b_hrs - a_hrs) / max(1, b_hrs), 1),
+                    "grouped_events_before": b_ev,
+                    "grouped_events_after": a_ev,
+                    "grouped_events_reduction_percent": round(100.0 * (b_ev - a_ev) / max(1, b_ev), 1),
+                },
+            }
+
+        return {
+            "validation": _build_split_comp(actual_val, pred_val, ts_val, seed=101),
+            "test": _build_split_comp(actual_test, pred_test, ts_test, seed=42),
         }

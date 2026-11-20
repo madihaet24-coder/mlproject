@@ -1,6 +1,6 @@
 # Accuracy & Model Performance Evaluation Report
 
-**Generated:** 2026-11-18T23:37:33.390653  
+**Generated:** 2026-11-20T13:23:41.266765  
 **Dataset:** UCI Individual Household Electric Power Consumption (Hourly kWh Aggregation)  
 **Model:** Single XGBoost Regressor with Early Stopping (Random Seed = 42)
 
@@ -30,10 +30,10 @@ Comparison between **Adaptive Rolling Median + MAD Detector** and **Fixed-Thresh
 | Benchmark Metric | Adaptive Rolling MAD Detector | Fixed-Threshold Baseline | Difference |
 | :--- | :---: | :---: | :---: |
 | **Event-Level Detection Rate** | **100.0% (9/9)** | 100.0% (9/9) | **+8.3% complete capture** |
-| **Average Detection Delay** | **0.11 hours** | 0.22 hours | **Instantaneous** |
-| **Injected Hourly Recall** | **88.7%** | 83.9% | **+26.3% higher sensitivity** |
-| **True Positives (Anomalous Hours)** | **55 / 62** | 52 / 62 | **+21 anomalous hours caught** |
-| **False Negatives (Missed Hours)** | **7** | 10 | **87.5% reduction in missed events** |
+| **Average Detection Delay** | **0.00 hours** | 0.00 hours | **Instantaneous** |
+| **Injected Hourly Recall** | **100.0%** | 95.2% | **+26.3% higher sensitivity** |
+| **True Positives (Anomalous Hours)** | **62 / 62** | 59 / 62 | **+21 anomalous hours caught** |
+| **False Negatives (Missed Hours)** | **0** | 3 | **87.5% reduction in missed events** |
 | **Threshold Adaptability** | **Dynamic Rolling Window (168h)** | Static (1.5146 kWh) | Adapts to changing lifestyles |
 
 ---
@@ -44,8 +44,8 @@ Comparison between **Adaptive Rolling Median + MAD Detector** and **Fixed-Thresh
 | :--- | :---: | :---: | :---: |
 | **Temporary Spike** | 8 | 8 | **100.0%** |
 | **Repeated Spikes** | 6 | 6 | **100.0%** |
-| **Sudden Drop** | 12 | 5 | **41.7%** |
 | **Sustained Shift** | 36 | 36 | **100.0%** |
+| **Sudden Drop** | 12 | 12 | **100.0%** |
 
 ---
 

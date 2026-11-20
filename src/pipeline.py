@@ -2,6 +2,7 @@
 
 import json
 import logging
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnomalyDetectionPipeline:
-    """Orchestrates data ingestion, training, anomaly detection, and evaluation."""
+    """Orchestrates data ingestion, training, k-selection, anomaly detection, and evaluation."""
 
     def __init__(
         self,
@@ -50,7 +51,7 @@ class AnomalyDetectionPipeline:
         force_recompute_data: bool = False,
         force_retrain_model: bool = False,
     ) -> Dict[str, Any]:
-        """Execute the full end-to-end pipeline and persist reports."""
+        """Execute the full end-to-end pipeline, k-sweep, before/after validation, and export reports."""
         loader = DataLoader(self.data_config)
         df_hourly = loader.process_and_save(force=force_recompute_data)
 
@@ -71,7 +72,7 @@ class AnomalyDetectionPipeline:
         feats_test = df_feats[df_feats[dt_col] > val_max_dt]
 
         X_train, y_train, _ = engineer.get_feature_matrix(feats_train)
-        X_val, y_val, _ = engineer.get_feature_matrix(feats_val)
+        X_val, y_val, ts_val = engineer.get_feature_matrix(feats_val)
         X_test, y_test, ts_test = engineer.get_feature_matrix(feats_test)
 
         trainer = ModelTrainer(self.model_config)
@@ -88,13 +89,37 @@ class AnomalyDetectionPipeline:
         preds_val = trainer.predict(X_val)
         preds_test = trainer.predict(X_test)
 
-        # Calibrate fixed baseline on validation residuals
+        # 1. Validation-based sensitivity constant k sweep (3.0, 3.5, 4.0, 4.5)
+        k_sweep = Evaluator.run_k_sensitivity_sweep(
+            actual_val=y_val.to_numpy(dtype=float),
+            pred_val=preds_val,
+            ts_val=ts_val,
+            actual_test=y_test.to_numpy(dtype=float),
+            pred_test=preds_test,
+            ts_test=ts_test,
+            base_config=self.detector_config,
+        )
+        selected_k = float(k_sweep["selected_k"])
+        active_cfg = replace(self.detector_config, sensitivity=selected_k)
+
+        # 2. Before (Legacy) vs After (Improved) comparison on Validation & Test
+        before_vs_after = Evaluator.compare_before_after(
+            actual_val=y_val.to_numpy(dtype=float),
+            pred_val=preds_val,
+            ts_val=ts_val,
+            actual_test=y_test.to_numpy(dtype=float),
+            pred_test=preds_test,
+            ts_test=ts_test,
+            improved_config=active_cfg,
+        )
+
+        # 3. Calibrate fixed baseline on validation residuals
         val_residuals = y_val.to_numpy(dtype=float) - preds_val
         fixed_baseline = FixedThresholdBaseline()
         calibrated_thresh = fixed_baseline.fit_from_residuals(val_residuals, multiplier=3.0)
 
-        # Run Adaptive Detector on the real test stream and export CSV
-        detector = AdaptiveAnomalyDetector(self.detector_config)
+        # 4. Run Improved Detector on the real test stream & export hourly + grouped event CSVs
+        detector = AdaptiveAnomalyDetector(active_cfg)
         real_test_anomalies = detector.detect(
             actual=y_test.to_numpy(dtype=float),
             predicted=preds_test,
@@ -102,9 +127,18 @@ class AnomalyDetectionPipeline:
         )
         anomalies_csv_path = REPORTS_DIR / "detected_anomalies.csv"
         real_test_anomalies.to_csv(anomalies_csv_path, index=False)
-        logger.info("Saved detected anomalies log to %s", anomalies_csv_path)
 
-        # Controlled synthetic benchmark evaluation
+        grouped_events_df = AdaptiveAnomalyDetector.group_anomaly_events(real_test_anomalies)
+        events_csv_path = REPORTS_DIR / "detected_anomaly_events.csv"
+        grouped_events_df.to_csv(events_csv_path, index=False)
+        logger.info(
+            "Saved %d flagged hours (%d grouped events) to %s",
+            int(real_test_anomalies["is_anomaly"].sum()),
+            len(grouped_events_df),
+            events_csv_path,
+        )
+
+        # 5. Controlled synthetic benchmark evaluation on test stream
         test_df = pd.DataFrame({dt_col: ts_test.values, target_col: y_test.values})
         injector = SyntheticAnomalyInjector(self.scenario_config)
         df_injected, events_df = injector.inject_scenarios(test_df, target_col)
@@ -131,9 +165,26 @@ class AnomalyDetectionPipeline:
 
         comparison_report = {
             "generated_at": datetime.now().isoformat(),
+            "detector_config": {
+                "sensitivity_k": active_cfg.sensitivity,
+                "window_size": active_cfg.window_size,
+                "min_history": active_cfg.min_history,
+                "min_residual_kwh": active_cfg.min_residual_kwh,
+                "persistence": active_cfg.persistence,
+                "severe_spike_multiplier": active_cfg.severe_spike_multiplier,
+                "rebaseline_hours": active_cfg.rebaseline_hours,
+                "exclude_anomalies": active_cfg.exclude_anomalies,
+            },
             "forecasting_metrics": forecasting_metrics,
+            "k_sensitivity_sweep": k_sweep,
+            "before_vs_after": before_vs_after,
             "adaptive_detector": adaptive_eval,
             "fixed_baseline": baseline_eval,
+            "note": (
+                "Alerts identify potential unusual electricity consumption anomalies; "
+                "real-world UCI test hours are unlabelled, whereas Precision/Recall/F1 "
+                "are evaluated on controlled synthetic anomaly scenarios."
+            ),
         }
 
         report_path = REPORTS_DIR / "evaluation_report.json"
@@ -144,4 +195,5 @@ class AnomalyDetectionPipeline:
         return {
             "comparison_report": comparison_report,
             "adaptive_results": real_test_anomalies,
+            "grouped_events": grouped_events_df,
         }

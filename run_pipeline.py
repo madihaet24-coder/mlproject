@@ -55,6 +55,31 @@ def main():
         print(f"  {'False Alarms / Day':<28} | {adaptive_metrics['false_alarms_per_day']:>21.2f} | {baseline_metrics['false_alarms_per_day']:>15.2f}")
         print(f"  {'True Positives':<28} | {adaptive_metrics['true_positives']:>21} | {baseline_metrics['true_positives']:>15}")
         print(f"  {'False Positives':<28} | {adaptive_metrics['false_positives']:>21} | {baseline_metrics['false_positives']:>15}")
+
+        if "k_sensitivity_sweep" in report:
+            sweep = report["k_sensitivity_sweep"]
+            print(f"\nValidation Sensitivity Sweep (Selected k = {sweep['selected_k']}):")
+            print(f"  {'k':<6} | {'Val Flagged Hrs':<15} | {'Test Flagged Hrs':<16} | {'Val Ctrl F1':<11} | {'Val Ev Rate':<11}")
+            print(f"  {'-'*6} | {'-'*15} | {'-'*16} | {'-'*11} | {'-'*11}")
+            for row in sweep["results"]:
+                v, t = row["validation"], row["test"]
+                print(
+                    f"  {row['k']:<6.1f} | {v['flagged_hours']:<15} | {t['flagged_hours']:<16} | "
+                    f"{v['synthetic_f1']*100:>9.1f}% | {v['synthetic_event_rate']*100:>9.1f}%"
+                )
+
+        if "before_vs_after" in report:
+            t_red = report["before_vs_after"]["test"]["reduction_summary"]
+            v_red = report["before_vs_after"]["validation"]["reduction_summary"]
+            print("\nBefore (Legacy k=3.0) vs After (Improved) False Alarm Reduction:")
+            print(
+                f"  - Validation Flagged Hours: {v_red['flagged_hours_before']} -> {v_red['flagged_hours_after']} "
+                f"(-{v_red['flagged_hours_reduction_percent']:.1f}%), Events: {v_red['grouped_events_before']} -> {v_red['grouped_events_after']}"
+            )
+            print(
+                f"  - Test Flagged Hours:       {t_red['flagged_hours_before']} -> {t_red['flagged_hours_after']} "
+                f"(-{t_red['flagged_hours_reduction_percent']:.1f}%), Events: {t_red['grouped_events_before']} -> {t_red['grouped_events_after']}"
+            )
         print("=" * 70 + "\n")
 
     except Exception as e:

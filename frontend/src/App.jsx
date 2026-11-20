@@ -9,7 +9,6 @@ import {
   Download,
   Play,
   RefreshCw,
-  Zap,
 } from "lucide-react";
 import { ForecastLineChart, ResidualThresholdChart, SimpleBarChart } from "./components/Charts";
 
@@ -21,13 +20,30 @@ const TABS = [
   { id: "benchmarks", label: "Benchmarks", icon: BarChart3 },
 ];
 
+const CANDIDATE_K = [3.0, 3.5, 4.0, 4.5];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("overview");
   const [overview, setOverview] = useState(null);
   const [profiles, setProfiles] = useState(null);
-  const [anomalyData, setAnomalyData] = useState({ total: 0, anomalyCount: 0, rows: [] });
+  const [anomalyData, setAnomalyData] = useState({
+    k: 4.0,
+    window_size: 168,
+    min_residual_kwh: 0.65,
+    persistence: 2,
+    severe_spike_multiplier: 1.35,
+    rebaseline_hours: 48,
+    total: 0,
+    anomalyCount: 0,
+    groupedEventsCount: 0,
+    events: [],
+    rows: [],
+  });
   const [anomWindow, setAnomWindow] = useState(500);
+  const [anomK, setAnomK] = useState(4.0);
+  const [anomLoading, setAnomLoading] = useState(false);
   const [anomFilter, setAnomFilter] = useState("All");
+  const [anomViewMode, setAnomViewMode] = useState("events");
   const [simStartIdx, setSimStartIdx] = useState(29500);
   const [simHorizon, setSimHorizon] = useState(24);
   const [simResult, setSimResult] = useState(null);
@@ -41,6 +57,8 @@ export default function App() {
       const res = await fetch("/api/overview");
       const data = await res.json();
       setOverview(data);
+      const selectedK = data?.evaluation?.detector_config?.sensitivity_k;
+      if (selectedK !== undefined) setAnomK(selectedK);
     } catch (err) {
       console.error("Failed to fetch overview:", err);
     } finally {
@@ -48,13 +66,16 @@ export default function App() {
     }
   };
 
-  const fetchAnomalies = async (limit) => {
+  const fetchAnomalies = async (limit, kVal) => {
+    setAnomLoading(true);
     try {
-      const res = await fetch(`/api/anomalies?limit=${limit}`);
+      const res = await fetch(`/api/anomalies?limit=${limit}&k=${kVal}`);
       const data = await res.json();
       setAnomalyData(data);
     } catch (err) {
       console.error("Failed to fetch anomalies:", err);
+    } finally {
+      setAnomLoading(false);
     }
   };
 
@@ -75,11 +96,11 @@ export default function App() {
 
   useEffect(() => {
     if (activeTab === "anomalies") {
-      fetchAnomalies(anomWindow);
+      fetchAnomalies(anomWindow, anomK);
     } else if (activeTab === "explorer") {
       fetchProfiles();
     }
-  }, [activeTab, anomWindow]);
+  }, [activeTab, anomWindow, anomK]);
 
   const handleRunSimulation = async () => {
     setSimLoading(true);
@@ -107,7 +128,7 @@ export default function App() {
         body: JSON.stringify({ forceTrain }),
       });
       await fetchOverview();
-      if (activeTab === "anomalies") await fetchAnomalies(anomWindow);
+      if (activeTab === "anomalies") await fetchAnomalies(anomWindow, anomK);
     } catch (err) {
       console.error("Pipeline run failed:", err);
     } finally {
@@ -115,17 +136,33 @@ export default function App() {
     }
   };
 
-  const testMetrics = overview?.evaluation?.forecasting_metrics || {};
-  const adaptiveEv = overview?.evaluation?.adaptive_detector?.event_level || {};
-  const baselineEv = overview?.evaluation?.fixed_baseline?.event_level || {};
-  const adaptiveOverall = overview?.evaluation?.adaptive_detector?.overall || {};
-  const baselineOverall = overview?.evaluation?.fixed_baseline?.overall || {};
+  const evalData = overview?.evaluation || {};
+  const detectorCfg = evalData.detector_config || {
+    sensitivity_k: 4.0,
+    window_size: 168,
+    min_residual_kwh: 0.65,
+    persistence: 2,
+    severe_spike_multiplier: 1.35,
+    rebaseline_hours: 48,
+  };
+  const testMetrics = evalData.forecasting_metrics || {};
+  const adaptiveEv = evalData.adaptive_detector?.event_level || {};
+  const baselineEv = evalData.fixed_baseline?.event_level || {};
+  const adaptiveOverall = evalData.adaptive_detector?.overall || {};
+  const baselineOverall = evalData.fixed_baseline?.overall || {};
+  const kSweep = evalData.k_sensitivity_sweep || null;
+  const beforeVsAfter = evalData.before_vs_after || null;
+  const testComp = beforeVsAfter?.test || null;
+  const valComp = beforeVsAfter?.validation || null;
   const validation = overview?.validation || {};
   const accReport = overview?.accuracy || {};
   const modelMeta = overview?.modelMeta || {};
 
   const filteredAnomalies = (anomalyData.rows || []).filter(
     (r) => r.is_anomaly && (anomFilter === "All" || r.anomaly_type === anomFilter)
+  );
+  const filteredEvents = (anomalyData.events || []).filter(
+    (ev) => anomFilter === "All" || ev.anomaly_type === anomFilter
   );
 
   return (
@@ -136,7 +173,9 @@ export default function App() {
           <span className="brand-dot" />
           <div>
             <div className="brand-title">Power Anomaly ML</div>
-            <div className="brand-sub">Adaptive MAD + XGBoost</div>
+            <div className="brand-sub">
+              Adaptive MAD (k={detectorCfg.sensitivity_k}) + XGBoost
+            </div>
           </div>
         </div>
         <button
@@ -188,7 +227,7 @@ export default function App() {
             {pipelineRunning ? "Running Pipeline..." : "Retrain & Evaluate"}
           </button>
           <div style={{ fontSize: 11, color: "#64748b", textAlign: "center" }}>
-            React 18 · Express · Webpack 5
+            k={detectorCfg.sensitivity_k} · {detectorCfg.window_size}h Window
           </div>
         </div>
       </aside>
@@ -199,7 +238,7 @@ export default function App() {
           <h1>Adaptive Household Electricity Anomaly Detection</h1>
           <p>
             Leak-free XGBoost forecasting paired with past-only Rolling Median + MAD dynamic thresholds
-            and anomaly-exclusion baseline protection.
+            (k={detectorCfg.sensitivity_k}, {detectorCfg.window_size}h window, event grouping &amp; controlled re-baselining).
           </p>
         </div>
 
@@ -212,35 +251,47 @@ export default function App() {
               <>
                 <div className="kpi-grid">
                   <div className="kpi-card">
-                    <div className="kpi-label">Test MAE</div>
+                    <div className="kpi-label">Test MAE / RMSE</div>
                     <div className="kpi-value">
-                      {testMetrics.mae !== undefined ? `${testMetrics.mae.toFixed(3)} kWh` : "—"}
+                      {testMetrics.mae !== undefined ? `${testMetrics.mae.toFixed(3)}` : "—"}
                     </div>
-                    <div className="kpi-sub">RMSE: {testMetrics.rmse ? testMetrics.rmse.toFixed(3) : "—"} kWh</div>
+                    <div className="kpi-sub">
+                      kWh MAE · RMSE: {testMetrics.rmse ? testMetrics.rmse.toFixed(3) : "—"} kWh
+                    </div>
                   </div>
                   <div className="kpi-card">
-                    <div className="kpi-label">Test R² Score</div>
+                    <div className="kpi-label">Grouped Events</div>
                     <div className="kpi-value">
-                      {testMetrics.r2 !== undefined ? testMetrics.r2.toFixed(3) : "—"}
+                      {overview?.anomaliesSummary?.groupedEventsCount ?? 0}
                     </div>
-                    <div className="kpi-sub">Single XGBRegressor</div>
+                    <div className="kpi-sub">
+                      {testComp
+                        ? `Down from ${testComp.reduction_summary.grouped_events_before} (k=3.0)`
+                        : "Contiguous event alerts"}
+                    </div>
                   </div>
                   <div className="kpi-card">
-                    <div className="kpi-label">Event Capture</div>
+                    <div className="kpi-label">Flagged Test Hours</div>
+                    <div className="kpi-value">
+                      {overview?.anomaliesSummary?.detectedCount ?? 0}
+                    </div>
+                    <div className="kpi-sub">
+                      {overview?.anomaliesSummary?.ratePercent ?? 0}% of{" "}
+                      {overview?.anomaliesSummary?.totalTestHours ?? 0}h
+                      {testComp
+                        ? ` (-${testComp.reduction_summary.flagged_hours_reduction_percent}%)`
+                        : ""}
+                    </div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Synthetic Event Capture</div>
                     <div className="kpi-value">
                       {adaptiveEv.event_detection_rate !== undefined
                         ? `${(adaptiveEv.event_detection_rate * 100).toFixed(0)}%`
                         : "—"}
                     </div>
                     <div className="kpi-sub">
-                      Delay: {adaptiveEv.average_detection_delay_hours ?? 0}h
-                    </div>
-                  </div>
-                  <div className="kpi-card">
-                    <div className="kpi-label">Flagged Hours</div>
-                    <div className="kpi-value">{overview?.anomaliesSummary?.detectedCount ?? 0}</div>
-                    <div className="kpi-sub">
-                      {overview?.anomaliesSummary?.ratePercent ?? 0}% of {overview?.anomaliesSummary?.totalTestHours ?? 0}h
+                      Delay: {adaptiveEv.average_detection_delay_hours ?? 0}h · k={detectorCfg.sensitivity_k}
                     </div>
                   </div>
                 </div>
@@ -250,42 +301,111 @@ export default function App() {
                     <div className="card-header">
                       <div>
                         <div className="card-title">Recent Test Stream: Actual vs. Forecast</div>
-                        <div className="card-subtitle">Touch or hover chart to inspect hourly readings</div>
+                        <div className="card-subtitle">
+                          Red markers highlight potential consumption anomalies (k={detectorCfg.sensitivity_k})
+                        </div>
                       </div>
-                      <span className="badge badge-info">Last 300 Hours</span>
+                      <span className="badge badge-info">
+                        k={detectorCfg.sensitivity_k} · {detectorCfg.window_size}h Window
+                      </span>
                     </div>
                     <ForecastLineChart data={overview?.recentStream || []} showAnomalies />
                   </div>
 
                   <div className="card">
                     <div className="card-header">
-                      <div className="card-title">Research Verification</div>
-                      <span className="badge badge-success">Verified</span>
+                      <div className="card-title">Detector Protections</div>
+                      <span className="badge badge-success">Active</span>
                     </div>
                     <div className="checklist">
                       <div className="checklist-item">
                         <CheckCircle2 size={16} color="#10b981" />
-                        <span>UCI Hourly Data ({validation?.file_info?.total_hourly_records?.toLocaleString() || "34,589"} hrs)</span>
+                        <span>Validation-Selected k = {detectorCfg.sensitivity_k}</span>
+                      </div>
+                      <div className="checklist-item">
+                        <CheckCircle2 size={16} color="#10b981" />
+                        <span>Min Error Floor: {detectorCfg.min_residual_kwh} kWh</span>
+                      </div>
+                      <div className="checklist-item">
+                        <CheckCircle2 size={16} color="#10b981" />
+                        <span>
+                          Persistence: {detectorCfg.persistence}h (1h if ≥{detectorCfg.severe_spike_multiplier}× Tₜ)
+                        </span>
+                      </div>
+                      <div className="checklist-item">
+                        <CheckCircle2 size={16} color="#10b981" />
+                        <span>Re-baselining after {detectorCfg.rebaseline_hours}h routine shift</span>
                       </div>
                       <div className="checklist-item">
                         <CheckCircle2 size={16} color="#10b981" />
                         <span>Zero Future Target Leakage</span>
                       </div>
-                      <div className="checklist-item">
-                        <CheckCircle2 size={16} color="#10b981" />
-                        <span>22 Lag & Cyclical Features</span>
-                      </div>
-                      <div className="checklist-item">
-                        <CheckCircle2 size={16} color="#10b981" />
-                        <span>168h Rolling MAD + Exclusion</span>
-                      </div>
-                      <div className="checklist-item">
-                        <CheckCircle2 size={16} color="#10b981" />
-                        <span>23/23 Pytest Checks Passed</span>
-                      </div>
                     </div>
                   </div>
                 </div>
+
+                {testComp && (
+                  <div className="card">
+                    <div className="card-header">
+                      <div>
+                        <div className="card-title">Before vs. After False-Alarm Reduction (Test Split)</div>
+                        <div className="card-subtitle">
+                          Unlabelled real-world alerts vs. controlled synthetic benchmark metrics. Alerts identify
+                          potential unusual electricity consumption, not confirmed physical leakage.
+                        </div>
+                      </div>
+                      <span className="badge badge-success">
+                        -{testComp.reduction_summary.flagged_hours_reduction_percent}% Flagged Hours
+                      </span>
+                    </div>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Evaluation Scope &amp; Metric</th>
+                            <th>Before (Legacy k=3.0)</th>
+                            <th>After (Improved k={detectorCfg.sensitivity_k})</th>
+                            <th>Change</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td><strong>Real Stream: Flagged Hours</strong></td>
+                            <td>{testComp.legacy_before.real_unlabelled_stream.flagged_hours} hrs ({testComp.legacy_before.real_unlabelled_stream.flagged_rate_percent}%)</td>
+                            <td>{testComp.improved_after.real_unlabelled_stream.flagged_hours} hrs ({testComp.improved_after.real_unlabelled_stream.flagged_rate_percent}%)</td>
+                            <td><span className="badge badge-success">-{testComp.reduction_summary.flagged_hours_reduction_percent}%</span></td>
+                          </tr>
+                          <tr>
+                            <td><strong>Real Stream: Grouped Events</strong></td>
+                            <td>{testComp.legacy_before.real_unlabelled_stream.grouped_events} events</td>
+                            <td>{testComp.improved_after.real_unlabelled_stream.grouped_events} events</td>
+                            <td><span className="badge badge-success">-{testComp.reduction_summary.grouped_events_reduction_percent}%</span></td>
+                          </tr>
+                          <tr>
+                            <td><strong>Synthetic: Event Detection Rate</strong></td>
+                            <td>{(testComp.legacy_before.synthetic_benchmark.event_level.event_detection_rate * 100).toFixed(1)}%</td>
+                            <td>{(testComp.improved_after.synthetic_benchmark.event_level.event_detection_rate * 100).toFixed(1)}%</td>
+                            <td>{testComp.improved_after.synthetic_benchmark.event_level.average_detection_delay_hours}h delay</td>
+                          </tr>
+                          <tr>
+                            <td><strong>Synthetic: Controlled Precision / Recall / F1</strong></td>
+                            <td>
+                              {(testComp.legacy_before.synthetic_benchmark.controlled_benchmark.precision * 100).toFixed(1)}% /{" "}
+                              {(testComp.legacy_before.synthetic_benchmark.controlled_benchmark.recall * 100).toFixed(1)}% /{" "}
+                              {(testComp.legacy_before.synthetic_benchmark.controlled_benchmark.f1_score * 100).toFixed(1)}%
+                            </td>
+                            <td>
+                              {(testComp.improved_after.synthetic_benchmark.controlled_benchmark.precision * 100).toFixed(1)}% /{" "}
+                              {(testComp.improved_after.synthetic_benchmark.controlled_benchmark.recall * 100).toFixed(1)}% /{" "}
+                              {(testComp.improved_after.synthetic_benchmark.controlled_benchmark.f1_score * 100).toFixed(1)}%
+                            </td>
+                            <td><span className="badge badge-info">Controlled Window</span></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -466,25 +586,59 @@ export default function App() {
                     <div>
                       <div className="card-title">Adaptive Anomaly Detection Studio</div>
                       <div className="card-subtitle">
-                        {anomalyData.anomalyCount} anomalous hours across {anomalyData.total} test hours
+                        {anomLoading
+                          ? "Evaluating selected k..."
+                          : `${anomalyData.anomalyCount} flagged hours (${anomalyData.ratePercent ?? 0}%) grouped into ${anomalyData.groupedEventsCount ?? 0} anomaly events`}
+                        {anomalyData.beforeFlaggedHours
+                          ? ` · Legacy k=3.0 flagged ${anomalyData.beforeFlaggedHours}h (${anomalyData.beforeEventsCount} events)`
+                          : ""}
                       </div>
                     </div>
-                    <a className="btn btn-outline" href="/api/download/anomalies">
-                      <Download size={15} />
-                      Export CSV
-                    </a>
+                    <div className="pill-row">
+                      <a className="btn btn-outline" href="/api/download/events">
+                        <Download size={15} />
+                        Events CSV
+                      </a>
+                      <a className="btn btn-outline" href="/api/download/anomalies">
+                        <Download size={15} />
+                        Hourly CSV
+                      </a>
+                    </div>
                   </div>
 
-                  <div className="pill-row" style={{ marginBottom: 14 }}>
-                    {[250, 500, 1000].map((w) => (
-                      <button
-                        key={w}
-                        className={`pill-btn ${anomWindow === w ? "active" : ""}`}
-                        onClick={() => setAnomWindow(w)}
-                      >
-                        Last {w}h
-                      </button>
-                    ))}
+                  {/* Sensitivity k & Window Controls */}
+                  <div className="panel-grid equal-two" style={{ marginBottom: 14 }}>
+                    <div className="input-group">
+                      <label>
+                        MAD Sensitivity (k) — Compare Detection Results ({anomalyData.window_size || 168}h Window, Floor {anomalyData.min_residual_kwh ?? 0.65} kWh)
+                      </label>
+                      <div className="pill-row">
+                        {CANDIDATE_K.map((kVal) => (
+                          <button
+                            key={kVal}
+                            className={`pill-btn ${Math.abs(anomK - kVal) < 1e-6 ? "active" : ""}`}
+                            onClick={() => setAnomK(kVal)}
+                          >
+                            k = {kVal.toFixed(1)}
+                            {Math.abs(kVal - detectorCfg.sensitivity_k) < 1e-6 ? " (Selected)" : ""}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="input-group">
+                      <label>Display Window</label>
+                      <div className="pill-row">
+                        {[250, 500, 1000].map((w) => (
+                          <button
+                            key={w}
+                            className={`pill-btn ${anomWindow === w ? "active" : ""}`}
+                            onClick={() => setAnomWindow(w)}
+                          >
+                            Last {w}h
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   <ForecastLineChart data={anomalyData.rows} height={240} showAnomalies />
@@ -494,67 +648,157 @@ export default function App() {
 
                 <div className="card">
                   <div className="card-header">
-                    <div className="card-title">Detected Anomaly Events ({filteredAnomalies.length})</div>
+                    <div>
+                      <div className="card-title">
+                        {anomViewMode === "events"
+                          ? `Grouped Anomaly Events (${filteredEvents.length})`
+                          : `Flagged Hourly Readings (${filteredAnomalies.length})`}
+                      </div>
+                      <div className="card-subtitle">
+                        Consecutive flagged hours are grouped into a single alert event
+                      </div>
+                    </div>
                     <div className="pill-row">
-                      {["All", "High Spike", "Sustained Shift", "Sudden Drop"].map((cat) => (
-                        <button
-                          key={cat}
-                          className={`pill-btn ${anomFilter === cat ? "active" : ""}`}
-                          onClick={() => setAnomFilter(cat)}
-                        >
-                          {cat}
-                        </button>
-                      ))}
+                      <button
+                        className={`pill-btn ${anomViewMode === "events" ? "active" : ""}`}
+                        onClick={() => setAnomViewMode("events")}
+                      >
+                        Grouped Events
+                      </button>
+                      <button
+                        className={`pill-btn ${anomViewMode === "hours" ? "active" : ""}`}
+                        onClick={() => setAnomViewMode("hours")}
+                      >
+                        Hourly Details
+                      </button>
                     </div>
                   </div>
 
-                  {/* Mobile Card List */}
-                  <div className="mobile-event-list">
-                    {filteredAnomalies.slice(-25).reverse().map((row, idx) => (
-                      <div className="mobile-event-card" key={idx}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                          <strong style={{ fontSize: 12 }}>{row.timestamp}</strong>
-                          <span className="badge badge-danger">{row.anomaly_type}</span>
-                        </div>
-                        <div style={{ fontSize: 12, color: "#475569" }}>
-                          Actual: <strong>{row.actual.toFixed(2)} kWh</strong> · Forecast: {row.predicted.toFixed(2)} kWh
-                        </div>
-                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                          Residual: {row.residual.toFixed(2)} vs Threshold: {row.threshold.toFixed(2)} (z={row.score.toFixed(2)})
-                        </div>
-                      </div>
+                  <div className="pill-row" style={{ marginBottom: 12 }}>
+                    {["All", "High Spike", "Sustained Shift", "Sudden Drop"].map((cat) => (
+                      <button
+                        key={cat}
+                        className={`pill-btn ${anomFilter === cat ? "active" : ""}`}
+                        onClick={() => setAnomFilter(cat)}
+                      >
+                        {cat}
+                      </button>
                     ))}
                   </div>
 
-                  {/* Desktop Table */}
-                  <div className="desktop-table-only table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Timestamp</th>
-                          <th>Type</th>
-                          <th>Actual (kWh)</th>
-                          <th>Forecast (kWh)</th>
-                          <th>Residual</th>
-                          <th>Threshold</th>
-                          <th>MAD Score</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredAnomalies.slice(-40).reverse().map((row, idx) => (
-                          <tr key={idx}>
-                            <td>{row.timestamp}</td>
-                            <td><span className="badge badge-danger">{row.anomaly_type}</span></td>
-                            <td>{row.actual.toFixed(3)}</td>
-                            <td>{row.predicted.toFixed(3)}</td>
-                            <td>{row.residual.toFixed(3)}</td>
-                            <td>{row.threshold.toFixed(3)}</td>
-                            <td>{row.score.toFixed(2)}</td>
-                          </tr>
+                  {anomViewMode === "events" ? (
+                    <>
+                      {/* Mobile Event Cards */}
+                      <div className="mobile-event-list">
+                        {filteredEvents.slice(-30).reverse().map((ev) => (
+                          <div className="mobile-event-card" key={ev.event_id}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                              <strong style={{ fontSize: 12 }}>
+                                Event #{ev.event_id} · {ev.duration_hours}h
+                              </strong>
+                              <span className="badge badge-danger">{ev.anomaly_type}</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: "#475569" }}>
+                              {ev.start_timestamp} → {ev.end_timestamp.slice(11, 16)}
+                            </div>
+                            <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                              Peak: <strong>{ev.peak_actual.toFixed(2)} kWh</strong> (Pred avg:{" "}
+                              {ev.mean_predicted.toFixed(2)}) · Max Residual: {ev.peak_residual.toFixed(2)} vs{" "}
+                              {ev.threshold_at_peak.toFixed(2)} kWh
+                            </div>
+                          </div>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </div>
+
+                      {/* Desktop Events Table */}
+                      <div className="desktop-table-only table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Event #</th>
+                              <th>Start Time</th>
+                              <th>End Time</th>
+                              <th>Duration</th>
+                              <th>Type</th>
+                              <th>Peak Actual</th>
+                              <th>Avg Forecast</th>
+                              <th>Peak Residual</th>
+                              <th>Threshold</th>
+                              <th>Peak Score</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredEvents.slice(-40).reverse().map((ev) => (
+                              <tr key={ev.event_id}>
+                                <td><strong>#{ev.event_id}</strong></td>
+                                <td>{ev.start_timestamp}</td>
+                                <td>{ev.end_timestamp}</td>
+                                <td>{ev.duration_hours}h</td>
+                                <td><span className="badge badge-danger">{ev.anomaly_type}</span></td>
+                                <td>{ev.peak_actual.toFixed(3)} kWh</td>
+                                <td>{ev.mean_predicted.toFixed(3)} kWh</td>
+                                <td>{ev.peak_residual.toFixed(3)} kWh</td>
+                                <td>{ev.threshold_at_peak.toFixed(3)} kWh</td>
+                                <td>{ev.peak_score.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Mobile Hourly Cards */}
+                      <div className="mobile-event-list">
+                        {filteredAnomalies.slice(-25).reverse().map((row, idx) => (
+                          <div className="mobile-event-card" key={idx}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                              <strong style={{ fontSize: 12 }}>{row.timestamp}</strong>
+                              <span className="badge badge-danger">{row.anomaly_type}</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: "#475569" }}>
+                              Actual: <strong>{row.actual.toFixed(2)} kWh</strong> · Forecast: {row.predicted.toFixed(2)} kWh
+                            </div>
+                            <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                              Residual: {row.residual.toFixed(2)} vs Threshold: {row.threshold.toFixed(2)} (z={row.score.toFixed(2)})
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Desktop Hourly Table */}
+                      <div className="desktop-table-only table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Timestamp</th>
+                              <th>Event #</th>
+                              <th>Type</th>
+                              <th>Actual (kWh)</th>
+                              <th>Forecast (kWh)</th>
+                              <th>Residual</th>
+                              <th>Threshold</th>
+                              <th>MAD Score</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredAnomalies.slice(-40).reverse().map((row, idx) => (
+                              <tr key={idx}>
+                                <td>{row.timestamp}</td>
+                                <td>#{row.event_id}</td>
+                                <td><span className="badge badge-danger">{row.anomaly_type}</span></td>
+                                <td>{row.actual.toFixed(3)}</td>
+                                <td>{row.predicted.toFixed(3)}</td>
+                                <td>{row.residual.toFixed(3)}</td>
+                                <td>{row.threshold.toFixed(3)}</td>
+                                <td>{row.score.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -566,12 +810,12 @@ export default function App() {
                   <div className="card">
                     <div className="card-header">
                       <div className="card-title">Adaptive MAD vs. Fixed Baseline</div>
-                      <span className="badge badge-success">Controlled Benchmark</span>
+                      <span className="badge badge-success">Controlled Synthetic Benchmark</span>
                     </div>
                     <SimpleBarChart
                       items={[
                         {
-                          label: "Adaptive",
+                          label: `Adaptive k=${detectorCfg.sensitivity_k}`,
                           value: (adaptiveOverall.recall || 0) * 100,
                           color: "#0284c7",
                         },
@@ -587,19 +831,24 @@ export default function App() {
                     />
                     <div style={{ marginTop: 14, fontSize: 13, color: "#475569" }}>
                       Event Detection Rate:{" "}
-                      <strong>{((adaptiveEv.event_detection_rate || 0) * 100).toFixed(1)}%</strong> (Adaptive) vs{" "}
+                      <strong>{((adaptiveEv.event_detection_rate || 0) * 100).toFixed(1)}%</strong> (Adaptive,{" "}
+                      {adaptiveEv.average_detection_delay_hours ?? 0}h delay) vs{" "}
                       <strong>{((baselineEv.event_detection_rate || 0) * 100).toFixed(1)}%</strong> (Fixed Baseline)
                     </div>
                   </div>
 
                   <div className="card">
                     <div className="card-header">
-                      <div className="card-title">Research Reports & Downloads</div>
+                      <div className="card-title">Research Reports &amp; Downloads</div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                       <a className="btn btn-primary" href="/api/download/docx">
                         <Download size={16} />
                         Download Word Research Report (.docx)
+                      </a>
+                      <a className="btn btn-outline" href="/api/download/events">
+                        <Download size={16} />
+                        Download Grouped Anomaly Events (.csv)
                       </a>
                       <a className="btn btn-outline" href="/api/download/accuracy_md">
                         <Download size={16} />
@@ -613,10 +862,104 @@ export default function App() {
                   </div>
                 </div>
 
-                {overview?.evaluation?.adaptive_detector?.per_scenario && (
+                {kSweep && (
                   <div className="card">
                     <div className="card-header">
-                      <div className="card-title">Scenario-by-Scenario Detection Breakdown</div>
+                      <div>
+                        <div className="card-title">
+                          MAD Sensitivity Constant (k) Validation Sweep
+                        </div>
+                        <div className="card-subtitle">{kSweep.selection_criterion}</div>
+                      </div>
+                      <span className="badge badge-info">Selected k = {kSweep.selected_k}</span>
+                    </div>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>k Value</th>
+                            <th>Val Flagged Hrs</th>
+                            <th>Test Flagged Hrs</th>
+                            <th>Test Events</th>
+                            <th>Val Synth Precision</th>
+                            <th>Val Synth Recall</th>
+                            <th>Val Synth F1</th>
+                            <th>Val Event Rate</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {kSweep.results.map((r) => (
+                            <tr key={r.k}>
+                              <td>
+                                <strong>k = {r.k.toFixed(1)}</strong>{" "}
+                                {r.k === kSweep.selected_k && (
+                                  <span className="badge badge-success">Optimal</span>
+                                )}
+                              </td>
+                              <td>{r.validation.flagged_hours} ({r.validation.flagged_rate_percent}%)</td>
+                              <td>{r.test.flagged_hours} ({r.test.flagged_rate_percent}%)</td>
+                              <td>{r.test.grouped_events}</td>
+                              <td>{(r.validation.synthetic_precision * 100).toFixed(1)}%</td>
+                              <td>{(r.validation.synthetic_recall * 100).toFixed(1)}%</td>
+                              <td>{(r.validation.synthetic_f1 * 100).toFixed(1)}%</td>
+                              <td>{(r.validation.synthetic_event_rate * 100).toFixed(1)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {valComp && testComp && (
+                  <div className="card">
+                    <div className="card-header">
+                      <div className="card-title">Before vs. After Validation &amp; Test Comparison</div>
+                    </div>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Partition</th>
+                            <th>Before Flagged Hrs</th>
+                            <th>After Flagged Hrs</th>
+                            <th>Hours Reduction</th>
+                            <th>Before Events</th>
+                            <th>After Events</th>
+                            <th>Synth Recall (After)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            ["Validation (15%)", valComp],
+                            ["Test (15%)", testComp],
+                          ].map(([label, comp]) => (
+                            <tr key={label}>
+                              <td><strong>{label}</strong></td>
+                              <td>{comp.reduction_summary.flagged_hours_before}</td>
+                              <td>{comp.reduction_summary.flagged_hours_after}</td>
+                              <td>
+                                <span className="badge badge-success">
+                                  -{comp.reduction_summary.flagged_hours_reduction_percent}%
+                                </span>
+                              </td>
+                              <td>{comp.reduction_summary.grouped_events_before}</td>
+                              <td>{comp.reduction_summary.grouped_events_after}</td>
+                              <td>
+                                {(comp.improved_after.synthetic_benchmark.controlled_benchmark.recall * 100).toFixed(1)}%
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {evalData.adaptive_detector?.per_scenario && (
+                  <div className="card">
+                    <div className="card-header">
+                      <div className="card-title">Scenario-by-Scenario Synthetic Detection Breakdown</div>
                     </div>
                     <div className="table-wrap">
                       <table>
@@ -629,7 +972,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {Object.entries(overview.evaluation.adaptive_detector.per_scenario).map(
+                          {Object.entries(evalData.adaptive_detector.per_scenario).map(
                             ([name, sc]) => (
                               <tr key={name}>
                                 <td><strong>{name.replace(/_/g, " ")}</strong></td>

@@ -44,3 +44,21 @@ def test_evaluator_outputs_valid_metrics(synthetic_hourly_df):
     assert 0.0 <= eval_out["event_level"]["event_detection_rate"] <= 1.0
     assert 0.0 <= eval_out["controlled_benchmark"]["recall"] <= 1.0
     assert "per_scenario" in eval_out
+    assert "stream_counts" in eval_out
+
+
+def test_k_sensitivity_sweep_selects_valid_k(synthetic_hourly_df):
+    actual = synthetic_hourly_df["Global_active_power"].to_numpy()
+    predicted = actual * 0.95
+    ts = synthetic_hourly_df["Datetime"]
+
+    sweep = Evaluator.run_k_sensitivity_sweep(
+        actual_val=actual,
+        pred_val=predicted,
+        ts_val=ts,
+        actual_test=actual,
+        pred_test=predicted,
+        ts_test=ts,
+    )
+    assert sweep["selected_k"] in {3.0, 3.5, 4.0, 4.5}
+    assert len(sweep["results"]) == 4

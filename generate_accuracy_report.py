@@ -125,7 +125,7 @@ def generate_accuracy_report() -> Dict[str, Any]:
     injector = SyntheticAnomalyInjector(SyntheticScenarioConfig(random_seed=42))
     df_injected, events_df = injector.inject_scenarios(test_df, "Global_active_power")
 
-    detector = AdaptiveAnomalyDetector(AnomalyDetectorConfig(sensitivity=3.0, window_size=168))
+    detector = AdaptiveAnomalyDetector(AnomalyDetectorConfig())
     adaptive_results = detector.detect(
         actual=df_injected["Global_active_power"],
         predicted=preds_test,
@@ -144,6 +144,25 @@ def generate_accuracy_report() -> Dict[str, Any]:
 
     adaptive_eval = Evaluator.evaluate_scenarios(adaptive_results, events_df)
     baseline_eval = Evaluator.evaluate_scenarios(baseline_results, events_df)
+
+    k_sweep = Evaluator.run_k_sensitivity_sweep(
+        actual_val=y_val.to_numpy(dtype=float),
+        pred_val=preds_val,
+        ts_val=ts_val,
+        actual_test=y_test.to_numpy(dtype=float),
+        pred_test=preds_test,
+        ts_test=ts_test,
+        base_config=AnomalyDetectorConfig(),
+    )
+    before_vs_after = Evaluator.compare_before_after(
+        actual_val=y_val.to_numpy(dtype=float),
+        pred_val=preds_val,
+        ts_val=ts_val,
+        actual_test=y_test.to_numpy(dtype=float),
+        pred_test=preds_test,
+        ts_test=ts_test,
+        improved_config=AnomalyDetectorConfig(sensitivity=float(k_sweep["selected_k"])),
+    )
 
     # Assemble structured report
     report = {
@@ -203,6 +222,8 @@ def generate_accuracy_report() -> Dict[str, Any]:
                 "baseline_stream_metrics": baseline_eval["overall"],
             },
         },
+        "k_sensitivity_sweep": k_sweep,
+        "before_vs_after": before_vs_after,
     }
 
     # Save JSON report

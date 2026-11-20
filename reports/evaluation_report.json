@@ -1,34 +1,422 @@
 {
-  "generated_at": "2026-11-18T23:37:26.842741",
+  "generated_at": "2026-11-20T13:23:18.366710",
+  "detector_config": {
+    "sensitivity_k": 4.0,
+    "window_size": 168,
+    "min_history": 24,
+    "min_residual_kwh": 0.65,
+    "persistence": 2,
+    "severe_spike_multiplier": 1.35,
+    "rebaseline_hours": 48,
+    "exclude_anomalies": true
+  },
   "forecasting_metrics": {
     "mae": 0.31224317517504835,
     "rmse": 0.4559830815532981,
     "r2": 0.5787462573806319
   },
+  "k_sensitivity_sweep": {
+    "candidate_values": [
+      3.0,
+      3.5,
+      4.0,
+      4.5
+    ],
+    "selected_k": 4.0,
+    "selection_criterion": "Maximizes validation controlled F1 minus false-alarm rate penalty subject to synthetic event detection rate >= 90%.",
+    "results": [
+      {
+        "k": 3.0,
+        "validation": {
+          "flagged_hours": 214,
+          "flagged_rate_percent": 4.12,
+          "grouped_events": 173,
+          "synthetic_precision": 0.8611,
+          "synthetic_recall": 1.0,
+          "synthetic_f1": 0.9254,
+          "synthetic_event_rate": 1.0,
+          "synthetic_delay_hours": 0.0,
+          "selection_score": 1.0217
+        },
+        "test": {
+          "flagged_hours": 169,
+          "flagged_rate_percent": 3.26,
+          "grouped_events": 128,
+          "synthetic_precision": 0.8378,
+          "synthetic_recall": 1.0,
+          "synthetic_f1": 0.9118,
+          "synthetic_event_rate": 1.0,
+          "synthetic_delay_hours": 0.0
+        }
+      },
+      {
+        "k": 3.5,
+        "validation": {
+          "flagged_hours": 124,
+          "flagged_rate_percent": 2.39,
+          "grouped_events": 107,
+          "synthetic_precision": 0.8732,
+          "synthetic_recall": 1.0,
+          "synthetic_f1": 0.9323,
+          "synthetic_event_rate": 1.0,
+          "synthetic_delay_hours": 0.0,
+          "selection_score": 1.1124
+        },
+        "test": {
+          "flagged_hours": 108,
+          "flagged_rate_percent": 2.08,
+          "grouped_events": 86,
+          "synthetic_precision": 0.8857,
+          "synthetic_recall": 1.0,
+          "synthetic_f1": 0.9394,
+          "synthetic_event_rate": 1.0,
+          "synthetic_delay_hours": 0.0
+        }
+      },
+      {
+        "k": 4.0,
+        "validation": {
+          "flagged_hours": 73,
+          "flagged_rate_percent": 1.41,
+          "grouped_events": 63,
+          "synthetic_precision": 0.8986,
+          "synthetic_recall": 1.0,
+          "synthetic_f1": 0.9466,
+          "synthetic_event_rate": 1.0,
+          "synthetic_delay_hours": 0.0,
+          "selection_score": 1.168
+        },
+        "test": {
+          "flagged_hours": 76,
+          "flagged_rate_percent": 1.46,
+          "grouped_events": 59,
+          "synthetic_precision": 0.8986,
+          "synthetic_recall": 1.0,
+          "synthetic_f1": 0.9466,
+          "synthetic_event_rate": 1.0,
+          "synthetic_delay_hours": 0.0
+        }
+      },
+      {
+        "k": 4.5,
+        "validation": {
+          "flagged_hours": 48,
+          "flagged_rate_percent": 0.93,
+          "grouped_events": 43,
+          "synthetic_precision": 0.9118,
+          "synthetic_recall": 1.0,
+          "synthetic_f1": 0.9538,
+          "synthetic_event_rate": 1.0,
+          "synthetic_delay_hours": 0.0,
+          "selection_score": 1.1523
+        },
+        "test": {
+          "flagged_hours": 55,
+          "flagged_rate_percent": 1.06,
+          "grouped_events": 45,
+          "synthetic_precision": 0.9254,
+          "synthetic_recall": 1.0,
+          "synthetic_f1": 0.9612,
+          "synthetic_event_rate": 1.0,
+          "synthetic_delay_hours": 0.0
+        }
+      }
+    ]
+  },
+  "before_vs_after": {
+    "validation": {
+      "legacy_before": {
+        "real_unlabelled_stream": {
+          "total_hours": 5188,
+          "flagged_hours": 607,
+          "flagged_rate_percent": 11.7,
+          "grouped_events": 475,
+          "events_per_day": 2.1974
+        },
+        "synthetic_benchmark": {
+          "overall": {
+            "precision": 0.0944,
+            "recall": 1.0,
+            "f1_score": 0.1725,
+            "false_alarms_per_day": 2.7525,
+            "true_positives": 62,
+            "false_positives": 595,
+            "false_negatives": 0
+          },
+          "controlled_benchmark": {
+            "precision": 0.6739,
+            "recall": 1.0,
+            "f1_score": 0.8052,
+            "false_alarms_per_day": 2.5899,
+            "true_positives": 62,
+            "false_positives": 30,
+            "false_negatives": 0
+          },
+          "event_level": {
+            "total_events": 9,
+            "detected_events": 9,
+            "event_detection_rate": 1.0,
+            "average_detection_delay_hours": 0.0
+          },
+          "per_scenario": {
+            "repeated_spikes": {
+              "anomalous_samples": 6,
+              "detected_samples": 6,
+              "recall": 1.0
+            },
+            "temporary_spike": {
+              "anomalous_samples": 8,
+              "detected_samples": 8,
+              "recall": 1.0
+            },
+            "sudden_drop": {
+              "anomalous_samples": 12,
+              "detected_samples": 12,
+              "recall": 1.0
+            },
+            "sustained_shift": {
+              "anomalous_samples": 36,
+              "detected_samples": 36,
+              "recall": 1.0
+            }
+          },
+          "stream_counts": {
+            "total_flagged_hours": 657,
+            "flagged_rate_percent": 12.66,
+            "grouped_event_count": 473
+          }
+        }
+      },
+      "improved_after": {
+        "real_unlabelled_stream": {
+          "total_hours": 5188,
+          "flagged_hours": 73,
+          "flagged_rate_percent": 1.41,
+          "grouped_events": 63,
+          "events_per_day": 0.2914
+        },
+        "synthetic_benchmark": {
+          "overall": {
+            "precision": 0.4806,
+            "recall": 1.0,
+            "f1_score": 0.6492,
+            "false_alarms_per_day": 0.3099,
+            "true_positives": 62,
+            "false_positives": 67,
+            "false_negatives": 0
+          },
+          "controlled_benchmark": {
+            "precision": 0.8986,
+            "recall": 1.0,
+            "f1_score": 0.9466,
+            "false_alarms_per_day": 0.6043,
+            "true_positives": 62,
+            "false_positives": 7,
+            "false_negatives": 0
+          },
+          "event_level": {
+            "total_events": 9,
+            "detected_events": 9,
+            "event_detection_rate": 1.0,
+            "average_detection_delay_hours": 0.0
+          },
+          "per_scenario": {
+            "repeated_spikes": {
+              "anomalous_samples": 6,
+              "detected_samples": 6,
+              "recall": 1.0
+            },
+            "temporary_spike": {
+              "anomalous_samples": 8,
+              "detected_samples": 8,
+              "recall": 1.0
+            },
+            "sudden_drop": {
+              "anomalous_samples": 12,
+              "detected_samples": 12,
+              "recall": 1.0
+            },
+            "sustained_shift": {
+              "anomalous_samples": 36,
+              "detected_samples": 36,
+              "recall": 1.0
+            }
+          },
+          "stream_counts": {
+            "total_flagged_hours": 129,
+            "flagged_rate_percent": 2.49,
+            "grouped_event_count": 65
+          }
+        }
+      },
+      "reduction_summary": {
+        "flagged_hours_before": 607,
+        "flagged_hours_after": 73,
+        "flagged_hours_reduction_percent": 88.0,
+        "grouped_events_before": 475,
+        "grouped_events_after": 63,
+        "grouped_events_reduction_percent": 86.7
+      }
+    },
+    "test": {
+      "legacy_before": {
+        "real_unlabelled_stream": {
+          "total_hours": 5189,
+          "flagged_hours": 652,
+          "flagged_rate_percent": 12.57,
+          "grouped_events": 448,
+          "events_per_day": 2.0721
+        },
+        "synthetic_benchmark": {
+          "overall": {
+            "precision": 0.0896,
+            "recall": 1.0,
+            "f1_score": 0.1645,
+            "false_alarms_per_day": 2.9139,
+            "true_positives": 62,
+            "false_positives": 630,
+            "false_negatives": 0
+          },
+          "controlled_benchmark": {
+            "precision": 0.6392,
+            "recall": 1.0,
+            "f1_score": 0.7799,
+            "false_alarms_per_day": 3.1343,
+            "true_positives": 62,
+            "false_positives": 35,
+            "false_negatives": 0
+          },
+          "event_level": {
+            "total_events": 9,
+            "detected_events": 9,
+            "event_detection_rate": 1.0,
+            "average_detection_delay_hours": 0.0
+          },
+          "per_scenario": {
+            "temporary_spike": {
+              "anomalous_samples": 8,
+              "detected_samples": 8,
+              "recall": 1.0
+            },
+            "repeated_spikes": {
+              "anomalous_samples": 6,
+              "detected_samples": 6,
+              "recall": 1.0
+            },
+            "sustained_shift": {
+              "anomalous_samples": 36,
+              "detected_samples": 36,
+              "recall": 1.0
+            },
+            "sudden_drop": {
+              "anomalous_samples": 12,
+              "detected_samples": 12,
+              "recall": 1.0
+            }
+          },
+          "stream_counts": {
+            "total_flagged_hours": 692,
+            "flagged_rate_percent": 13.34,
+            "grouped_event_count": 443
+          }
+        }
+      },
+      "improved_after": {
+        "real_unlabelled_stream": {
+          "total_hours": 5189,
+          "flagged_hours": 76,
+          "flagged_rate_percent": 1.46,
+          "grouped_events": 59,
+          "events_per_day": 0.2729
+        },
+        "synthetic_benchmark": {
+          "overall": {
+            "precision": 0.4336,
+            "recall": 1.0,
+            "f1_score": 0.6049,
+            "false_alarms_per_day": 0.3746,
+            "true_positives": 62,
+            "false_positives": 81,
+            "false_negatives": 0
+          },
+          "controlled_benchmark": {
+            "precision": 0.8986,
+            "recall": 1.0,
+            "f1_score": 0.9466,
+            "false_alarms_per_day": 0.6269,
+            "true_positives": 62,
+            "false_positives": 7,
+            "false_negatives": 0
+          },
+          "event_level": {
+            "total_events": 9,
+            "detected_events": 9,
+            "event_detection_rate": 1.0,
+            "average_detection_delay_hours": 0.0
+          },
+          "per_scenario": {
+            "temporary_spike": {
+              "anomalous_samples": 8,
+              "detected_samples": 8,
+              "recall": 1.0
+            },
+            "repeated_spikes": {
+              "anomalous_samples": 6,
+              "detected_samples": 6,
+              "recall": 1.0
+            },
+            "sustained_shift": {
+              "anomalous_samples": 36,
+              "detected_samples": 36,
+              "recall": 1.0
+            },
+            "sudden_drop": {
+              "anomalous_samples": 12,
+              "detected_samples": 12,
+              "recall": 1.0
+            }
+          },
+          "stream_counts": {
+            "total_flagged_hours": 143,
+            "flagged_rate_percent": 2.76,
+            "grouped_event_count": 70
+          }
+        }
+      },
+      "reduction_summary": {
+        "flagged_hours_before": 652,
+        "flagged_hours_after": 76,
+        "flagged_hours_reduction_percent": 88.3,
+        "grouped_events_before": 448,
+        "grouped_events_after": 59,
+        "grouped_events_reduction_percent": 86.8
+      }
+    }
+  },
   "adaptive_detector": {
     "overall": {
-      "precision": 0.0798,
-      "recall": 0.8871,
-      "f1_score": 0.1465,
-      "false_alarms_per_day": 2.9324,
-      "true_positives": 55,
-      "false_positives": 634,
-      "false_negatives": 7
+      "precision": 0.4336,
+      "recall": 1.0,
+      "f1_score": 0.6049,
+      "false_alarms_per_day": 0.3746,
+      "true_positives": 62,
+      "false_positives": 81,
+      "false_negatives": 0
     },
     "controlled_benchmark": {
-      "precision": 0.6111,
-      "recall": 0.8871,
-      "f1_score": 0.7237,
-      "false_alarms_per_day": 3.1343,
-      "true_positives": 55,
-      "false_positives": 35,
-      "false_negatives": 7
+      "precision": 0.8986,
+      "recall": 1.0,
+      "f1_score": 0.9466,
+      "false_alarms_per_day": 0.6269,
+      "true_positives": 62,
+      "false_positives": 7,
+      "false_negatives": 0
     },
     "event_level": {
       "total_events": 9,
       "detected_events": 9,
       "event_detection_rate": 1.0,
-      "average_detection_delay_hours": 0.11
+      "average_detection_delay_hours": 0.0
     },
     "per_scenario": {
       "temporary_spike": {
@@ -41,42 +429,47 @@
         "detected_samples": 6,
         "recall": 1.0
       },
-      "sudden_drop": {
-        "anomalous_samples": 12,
-        "detected_samples": 5,
-        "recall": 0.4167
-      },
       "sustained_shift": {
         "anomalous_samples": 36,
         "detected_samples": 36,
         "recall": 1.0
+      },
+      "sudden_drop": {
+        "anomalous_samples": 12,
+        "detected_samples": 12,
+        "recall": 1.0
       }
+    },
+    "stream_counts": {
+      "total_flagged_hours": 143,
+      "flagged_rate_percent": 2.76,
+      "grouped_event_count": 70
     }
   },
   "fixed_baseline": {
     "overall": {
-      "precision": 0.4771,
-      "recall": 0.8387,
-      "f1_score": 0.6082,
-      "false_alarms_per_day": 0.2636,
-      "true_positives": 52,
-      "false_positives": 57,
-      "false_negatives": 10
+      "precision": 0.513,
+      "recall": 0.9516,
+      "f1_score": 0.6667,
+      "false_alarms_per_day": 0.259,
+      "true_positives": 59,
+      "false_positives": 56,
+      "false_negatives": 3
     },
     "controlled_benchmark": {
-      "precision": 0.9455,
-      "recall": 0.8387,
-      "f1_score": 0.8889,
-      "false_alarms_per_day": 0.2687,
-      "true_positives": 52,
-      "false_positives": 3,
-      "false_negatives": 10
+      "precision": 0.9672,
+      "recall": 0.9516,
+      "f1_score": 0.9593,
+      "false_alarms_per_day": 0.1791,
+      "true_positives": 59,
+      "false_positives": 2,
+      "false_negatives": 3
     },
     "event_level": {
       "total_events": 9,
       "detected_events": 9,
       "event_detection_rate": 1.0,
-      "average_detection_delay_hours": 0.22
+      "average_detection_delay_hours": 0.0
     },
     "per_scenario": {
       "temporary_spike": {
@@ -89,17 +482,23 @@
         "detected_samples": 6,
         "recall": 1.0
       },
-      "sudden_drop": {
-        "anomalous_samples": 12,
-        "detected_samples": 2,
-        "recall": 0.1667
-      },
       "sustained_shift": {
         "anomalous_samples": 36,
         "detected_samples": 36,
         "recall": 1.0
+      },
+      "sudden_drop": {
+        "anomalous_samples": 12,
+        "detected_samples": 9,
+        "recall": 0.75
       }
     },
+    "stream_counts": {
+      "total_flagged_hours": 115,
+      "flagged_rate_percent": 2.22,
+      "grouped_event_count": 64
+    },
     "calibrated_threshold_kwh": 1.5146
-  }
+  },
+  "note": "Alerts identify potential unusual electricity consumption anomalies; real-world UCI test hours are unlabelled, whereas Precision/Recall/F1 are evaluated on controlled synthetic anomaly scenarios."
 }

@@ -59,12 +59,31 @@ class ModelConfig:
 class AnomalyDetectorConfig:
     """Configuration for the Adaptive Rolling Median + MAD anomaly detector."""
 
-    sensitivity: float = 3.0
+    sensitivity: float = 4.0
     window_size: int = 168
     min_history: int = 24
     eps: float = 1e-4
-    persistence: int = 1
+    persistence: int = 2
+    min_residual_kwh: float = 0.65
+    severe_spike_multiplier: float = 1.35
+    rebaseline_hours: int = 48
     exclude_anomalies: bool = True
+    candidate_k_values: Tuple[float, ...] = (3.0, 3.5, 4.0, 4.5)
+
+    @classmethod
+    def legacy_config(cls) -> "AnomalyDetectorConfig":
+        """Return pre-improvement detector settings (k=3.0, no floor/persistence/rebaseline)."""
+        return cls(
+            sensitivity=3.0,
+            window_size=168,
+            min_history=24,
+            eps=1e-4,
+            persistence=1,
+            min_residual_kwh=0.0,
+            severe_spike_multiplier=1.0,
+            rebaseline_hours=0,
+            exclude_anomalies=True,
+        )
 
 
 @dataclass

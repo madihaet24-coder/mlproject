@@ -62,3 +62,94 @@ def test_fixed_threshold_baseline_calibration_and_detection():
     res = baseline.detect(actual=[1.0, 5.0], predicted=[1.0, 1.0])
     assert not bool(res.loc[0, "is_anomaly"])
     assert bool(res.loc[1, "is_anomaly"])
+
+
+def test_k_sensitivity_monotonic_flagged_hours():
+    rng = np.random.default_rng(123)
+    predicted = np.full(300, 1.2)
+    actual = predicted + rng.normal(0.0, 0.25, size=300)
+    actual[150] = 3.0
+
+    counts = []
+    for k_val in (3.0, 3.5, 4.0, 4.5):
+        det = AdaptiveAnomalyDetector(
+            AnomalyDetectorConfig(sensitivity=k_val, min_residual_kwh=0.0, persistence=1)
+        )
+        res = det.detect(actual, predicted)
+        counts.append(int(res["is_anomaly"].sum()))
+
+    assert counts == sorted(counts, reverse=True)
+
+
+def test_min_residual_floor_suppresses_minor_fluctuations_but_keeps_spikes():
+    actual = np.full(120, 1.0)
+    predicted = np.full(120, 1.0)
+    # Minor 0.35 kWh fluctuation despite tiny historical MAD -> suppressed by 0.65 floor
+    actual[60:63] = 1.35
+    # Genuine sharp spike (5.0 kWh) -> still detected
+    actual[90] = 5.0
+
+    det = AdaptiveAnomalyDetector(
+        AnomalyDetectorConfig(sensitivity=4.0, window_size=48, min_history=24, min_residual_kwh=0.65)
+    )
+    res = det.detect(actual, predicted)
+    assert not res.loc[60:62, "is_anomaly"].any()
+    assert bool(res.loc[90, "is_anomaly"])
+
+
+def test_event_grouping_consolidates_consecutive_hours():
+    actual = np.full(100, 1.0)
+    predicted = np.full(100, 1.0)
+    # One 4-hour consecutive shift and one isolated severe spike
+    actual[40:44] = 4.5
+    actual[70] = 5.0
+
+    det = AdaptiveAnomalyDetector(AnomalyDetectorConfig(window_size=48, min_history=24))
+    res = det.detect(actual, predicted)
+    events = AdaptiveAnomalyDetector.group_anomaly_events(res)
+
+    assert len(events) == 2
+    assert int(events.loc[0, "duration_hours"]) == 4
+    assert int(events.loc[1, "duration_hours"]) == 1
+    assert int(res["is_event_alert"].sum()) == 2
+
+
+def test_severe_single_hour_spike_bypasses_persistence():
+    actual = np.full(100, 1.0)
+    predicted = np.full(100, 1.0)
+    # Single-hour severe spike should trigger immediately even with persistence=2
+    actual[55] = 4.0
+
+    det = AdaptiveAnomalyDetector(
+        AnomalyDetectorConfig(
+            sensitivity=4.0,
+            window_size=48,
+            min_history=24,
+            persistence=2,
+            severe_spike_multiplier=1.35,
+        )
+    )
+    res = det.detect(actual, predicted)
+    assert bool(res.loc[55, "is_anomaly"])
+    assert not bool(res.loc[56, "is_anomaly"])
+
+
+def test_controlled_rebaselining_adapts_to_routine_change():
+    actual = np.full(200, 1.0)
+    predicted = np.full(200, 1.0)
+    # Permanent +1.5 kWh routine shift from hour 50 onward
+    actual[50:] = 2.5
+
+    det = AdaptiveAnomalyDetector(
+        AnomalyDetectorConfig(
+            sensitivity=4.0,
+            window_size=48,
+            min_history=24,
+            persistence=2,
+            rebaseline_hours=24,
+        )
+    )
+    res = det.detect(actual, predicted)
+    # Initially flags the shift, then re-baselines and stops alerting later in the shift
+    assert res.loc[50:74, "is_anomaly"].any()
+    assert not res.loc[120:, "is_anomaly"].any()
