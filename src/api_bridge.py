@@ -9,10 +9,6 @@ import pandas as pd
 
 from src.anomaly_detector import AdaptiveAnomalyDetector
 from src.config import REPORTS_DIR, AnomalyDetectorConfig, DataConfig
-from src.data_loader import DataLoader
-from src.feature_engineering import FeatureEngineer
-from src.model_training import ModelTrainer
-from src.preprocessing import Preprocessor
 
 
 def _load_test_predictions():
@@ -25,6 +21,11 @@ def _load_test_predictions():
                 df_cached["predicted"].to_numpy(dtype=float),
                 pd.to_datetime(df_cached["timestamp"]),
             )
+
+    from src.data_loader import DataLoader
+    from src.feature_engineering import FeatureEngineer
+    from src.model_training import ModelTrainer
+    from src.preprocessing import Preprocessor
 
     loader = DataLoader()
     df_hourly = loader.process_and_save()
@@ -45,21 +46,55 @@ def _load_test_predictions():
 
 
 def _serialize_rows(df_subset: pd.DataFrame) -> list[dict]:
-    return [
-        {
-            "timestamp": pd.to_datetime(r["timestamp"]).strftime("%Y-%m-%d %H:%M:%S"),
-            "actual": round(float(r["actual"]), 4),
-            "predicted": round(float(r["predicted"]), 4),
-            "residual": round(float(r["residual"]), 4),
-            "threshold": round(float(r["threshold"]), 4) if np.isfinite(r["threshold"]) else 0.0,
-            "score": round(float(r["score"]), 3) if np.isfinite(r["score"]) else 0.0,
-            "is_anomaly": bool(r["is_anomaly"]),
-            "anomaly_type": str(r["anomaly_type"]),
-            "event_id": int(r["event_id"]),
-            "is_event_alert": bool(r["is_event_alert"]),
-        }
-        for _, r in df_subset.iterrows()
+    if df_subset.empty:
+        return []
+    df_out = df_subset.copy()
+    df_out["timestamp"] = pd.to_datetime(df_out["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+    df_out["actual"] = df_out["actual"].round(4).astype(float)
+    df_out["predicted"] = df_out["predicted"].round(4).astype(float)
+    df_out["residual"] = df_out["residual"].round(4).astype(float)
+    df_out["threshold"] = np.where(
+        np.isfinite(df_out["threshold"]), df_out["threshold"].round(4), 0.0
+    ).astype(float)
+    df_out["score"] = np.where(
+        np.isfinite(df_out["score"]), df_out["score"].round(3), 0.0
+    ).astype(float)
+    df_out["is_anomaly"] = df_out["is_anomaly"].astype(bool)
+    df_out["anomaly_type"] = df_out["anomaly_type"].astype(str)
+    df_out["event_id"] = df_out["event_id"].astype(int)
+    df_out["is_event_alert"] = df_out["is_event_alert"].astype(bool)
+
+    cols = [
+        "timestamp",
+        "actual",
+        "predicted",
+        "residual",
+        "threshold",
+        "score",
+        "is_anomaly",
+        "anomaly_type",
+        "event_id",
+        "is_event_alert",
     ]
+    return df_out[cols].to_dict(orient="records")
+
+
+def _load_legacy_counts(y_test: np.ndarray, preds_test: np.ndarray, ts_test) -> tuple[int, int]:
+    eval_json = REPORTS_DIR / "evaluation_report.json"
+    if eval_json.exists():
+        try:
+            rep = json.loads(eval_json.read_text(encoding="utf-8"))
+            red = rep.get("before_vs_after", {}).get("test", {}).get("reduction_summary", {})
+            if "flagged_hours_before" in red and "grouped_events_before" in red:
+                return int(red["flagged_hours_before"]), int(red["grouped_events_before"])
+        except Exception:
+            pass
+
+    legacy_res = AdaptiveAnomalyDetector(AnomalyDetectorConfig.legacy_config()).detect(
+        actual=y_test, predicted=preds_test, timestamps=ts_test
+    )
+    legacy_events = AdaptiveAnomalyDetector.group_anomaly_events(legacy_res)
+    return int(legacy_res["is_anomaly"].sum()), int(len(legacy_events))
 
 
 def cmd_detect(k_val: float, window_size: int, limit: int) -> None:
@@ -72,71 +107,64 @@ def cmd_detect(k_val: float, window_size: int, limit: int) -> None:
     detector = AdaptiveAnomalyDetector(cfg)
     res_df = detector.detect(actual=y_test, predicted=preds_test, timestamps=ts_test)
     events_df = AdaptiveAnomalyDetector.group_anomaly_events(res_df)
+    before_hrs, before_ev = _load_legacy_counts(y_test, preds_test, ts_test)
 
-    # Legacy baseline counts for inline comparison
-    legacy_res = AdaptiveAnomalyDetector(AnomalyDetectorConfig.legacy_config()).detect(
-        actual=y_test, predicted=preds_test, timestamps=ts_test
-    )
-    legacy_events = AdaptiveAnomalyDetector.group_anomaly_events(legacy_res)
+    flagged_rows = _serialize_rows(res_df[res_df["is_anomaly"] == True])  # noqa: E712
 
-    if limit > 0:
-        sliced = res_df.iloc[-limit:]
+    if not events_df.empty:
+        ev_out = events_df.copy()
+        ev_out["start_timestamp"] = pd.to_datetime(ev_out["start_timestamp"]).dt.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        ev_out["end_timestamp"] = pd.to_datetime(ev_out["end_timestamp"]).dt.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        events = ev_out.to_dict(orient="records")
+    else:
+        events = []
+
+    total = len(res_df)
+    flagged = int(res_df["is_anomaly"].sum())
+    payload = {
+        "k": float(k_val),
+        "window_size": int(window_size),
+        "min_residual_kwh": cfg.min_residual_kwh,
+        "persistence": cfg.persistence,
+        "severe_spike_multiplier": cfg.severe_spike_multiplier,
+        "rebaseline_hours": cfg.rebaseline_hours,
+        "total": total,
+        "anomalyCount": flagged,
+        "ratePercent": round(100.0 * flagged / max(1, total), 2),
+        "groupedEventsCount": len(events),
+        "beforeFlaggedHours": before_hrs,
+        "beforeEventsCount": before_ev,
+        "events": events,
+        "flaggedRows": flagged_rows,
+    }
+
+    if limit == -1:
+        payload["allRows"] = _serialize_rows(res_df)
+    elif limit > 0:
+        payload["rows"] = _serialize_rows(res_df.iloc[-limit:])
     elif len(res_df) > 1200:
         step = max(1, len(res_df) // 1000)
         keep_mask = np.zeros(len(res_df), dtype=bool)
         keep_mask[::step] = True
         keep_mask |= res_df["is_anomaly"].to_numpy(dtype=bool)
         keep_mask[-1] = True
-        sliced = res_df.iloc[keep_mask]
+        payload["rows"] = _serialize_rows(res_df.iloc[keep_mask])
     else:
-        sliced = res_df
+        payload["rows"] = _serialize_rows(res_df)
 
-    rows = _serialize_rows(sliced)
-    flagged_rows = _serialize_rows(res_df[res_df["is_anomaly"] == True])  # noqa: E712
-
-    events = [
-        {
-            "event_id": int(r["event_id"]),
-            "start_timestamp": pd.to_datetime(r["start_timestamp"]).strftime("%Y-%m-%d %H:%M:%S"),
-            "end_timestamp": pd.to_datetime(r["end_timestamp"]).strftime("%Y-%m-%d %H:%M:%S"),
-            "duration_hours": int(r["duration_hours"]),
-            "anomaly_type": str(r["anomaly_type"]),
-            "peak_actual": float(r["peak_actual"]),
-            "mean_actual": float(r["mean_actual"]),
-            "mean_predicted": float(r["mean_predicted"]),
-            "peak_residual": float(r["peak_residual"]),
-            "threshold_at_peak": float(r["threshold_at_peak"]),
-            "peak_score": float(r["peak_score"]),
-        }
-        for _, r in events_df.iterrows()
-    ]
-
-    total = len(res_df)
-    flagged = int(res_df["is_anomaly"].sum())
-    print(
-        json.dumps(
-            {
-                "k": float(k_val),
-                "window_size": int(window_size),
-                "min_residual_kwh": cfg.min_residual_kwh,
-                "persistence": cfg.persistence,
-                "severe_spike_multiplier": cfg.severe_spike_multiplier,
-                "rebaseline_hours": cfg.rebaseline_hours,
-                "total": total,
-                "anomalyCount": flagged,
-                "ratePercent": round(100.0 * flagged / max(1, total), 2),
-                "groupedEventsCount": len(events),
-                "beforeFlaggedHours": int(legacy_res["is_anomaly"].sum()),
-                "beforeEventsCount": int(len(legacy_events)),
-                "events": events,
-                "flaggedRows": flagged_rows,
-                "rows": rows,
-            }
-        )
-    )
+    print(json.dumps(payload))
 
 
 def cmd_simulate(start_idx: int, horizon: int) -> None:
+    from src.data_loader import DataLoader
+    from src.feature_engineering import FeatureEngineer
+    from src.model_training import ModelTrainer
+    from src.preprocessing import Preprocessor
+
     loader = DataLoader()
     df_hourly = loader.process_and_save()
     prep = Preprocessor()
@@ -163,6 +191,9 @@ def cmd_simulate(start_idx: int, horizon: int) -> None:
 
 
 def cmd_profiles() -> None:
+    from src.data_loader import DataLoader
+    from src.preprocessing import Preprocessor
+
     loader = DataLoader()
     df_raw = loader.process_and_save()
     df = Preprocessor().clean_hourly_data(df_raw)
@@ -203,8 +234,9 @@ def cmd_profiles() -> None:
 
 
 def cmd_datasets() -> None:
-    loader = DataLoader()
-    print(json.dumps(loader.list_datasets()))
+    from src.data_loader import DataLoader
+
+    print(json.dumps(DataLoader().list_datasets()))
 
 
 def cmd_ingest(
@@ -213,6 +245,8 @@ def cmd_ingest(
     datetime_col: str | None,
     target_col: str | None,
 ) -> None:
+    from src.data_loader import DataLoader
+
     loader = DataLoader()
     entry = loader.ingest_custom_dataset(
         source_path=file_path,
@@ -225,6 +259,8 @@ def cmd_ingest(
 
 
 def cmd_activate(dataset_id: str) -> None:
+    from src.data_loader import DataLoader
+
     loader = DataLoader()
     registry = loader.activate_dataset(dataset_id)
     print(json.dumps({"registry": registry}))

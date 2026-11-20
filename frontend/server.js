@@ -114,7 +114,11 @@ function parseGroupedEventsCsv() {
 
 function runPython(args, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
-    execFile("python", args, { cwd: ROOT_DIR, timeout: timeoutMs }, (err, stdout, stderr) => {
+    execFile(
+      "python",
+      args,
+      { cwd: ROOT_DIR, timeout: timeoutMs, maxBuffer: 25 * 1024 * 1024 },
+      (err, stdout, stderr) => {
       if (err) {
         reject(new Error(stderr || err.message));
         return;
@@ -155,6 +159,17 @@ app.get("/api/overview", (req, res) => {
     recentStream: anomalies.rows,
   });
 });
+
+const detectCache = new Map();
+
+function sliceRows(allRows, limit) {
+  if (limit > 0) return allRows.slice(-limit);
+  if (allRows.length > 1200) {
+    const step = Math.max(1, Math.floor(allRows.length / 1000));
+    return allRows.filter((row, idx) => idx % step === 0 || row.is_anomaly || idx === allRows.length - 1);
+  }
+  return allRows;
+}
 
 // Anomaly stream with configurable window & live k sensitivity parameter
 app.get("/api/anomalies", async (req, res) => {
@@ -202,20 +217,35 @@ app.get("/api/anomalies", async (req, res) => {
   }
 
   try {
-    const stdout = await runPython([
-      "-m",
-      "src.api_bridge",
-      "detect",
-      "--k",
-      String(reqK),
-      "--window",
-      String(reqWin),
-      "--limit",
-      String(safeLimit),
-    ]);
-    res.json(JSON.parse(stdout));
+    const csvPath = path.join(REPORTS_DIR, "detected_anomalies.csv");
+    const mtime = fs.existsSync(csvPath) ? fs.statSync(csvPath).mtimeMs : 0;
+    const cacheKey = `${mtime}_${reqK.toFixed(2)}_${reqWin}`;
+
+    let cached = detectCache.get(cacheKey);
+    if (!cached) {
+      const stdout = await runPython([
+        "-m",
+        "src.api_bridge",
+        "detect",
+        "--k",
+        String(reqK),
+        "--window",
+        String(reqWin),
+        "--limit",
+        "-1",
+      ]);
+      cached = JSON.parse(stdout);
+      if (detectCache.size > 24) detectCache.clear();
+      detectCache.set(cacheKey, cached);
+    }
+
+    const { allRows = [], ...meta } = cached;
+    return res.json({
+      ...meta,
+      rows: sliceRows(allRows, safeLimit),
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
