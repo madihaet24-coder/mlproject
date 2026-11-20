@@ -61,27 +61,23 @@ export default function App() {
   const [datasetMsg, setDatasetMsg] = useState(null);
 
   const fetchOverview = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/overview");
-      const data = await res.json();
-      setOverview(data);
-      const selectedK = data?.evaluation?.detector_config?.sensitivity_k;
-      if (selectedK !== undefined) setAnomK(selectedK);
-      const totalHrs = data?.validation?.file_info?.total_hourly_records || 34589;
-      const safeStart = Math.max(180, Math.min(totalHrs - 48, Math.floor(totalHrs * 0.85)));
-      setSimStartIdx(safeStart);
-    } catch (err) {
-      console.error("Failed to fetch overview:", err);
-    } finally {
-      setLoading(false);
-    }
+    const res = await fetch(`/api/overview?_t=${Date.now()}`, { cache: "no-store" });
+    const data = await res.json();
+    setOverview(data);
+    const selectedK = data?.evaluation?.detector_config?.sensitivity_k ?? 4.0;
+    setAnomK(selectedK);
+    const totalHrs = data?.validation?.file_info?.total_hourly_records || 34589;
+    const safeStart = Math.max(180, Math.min(totalHrs - 48, Math.floor(totalHrs * 0.85)));
+    setSimStartIdx(safeStart);
+    return { data, selectedK, safeStart };
   };
 
   const fetchAnomalies = async (limit, kVal) => {
     setAnomLoading(true);
     try {
-      const res = await fetch(`/api/anomalies?limit=${limit}&k=${kVal}`);
+      const res = await fetch(`/api/anomalies?limit=${limit}&k=${kVal}&_t=${Date.now()}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
       setAnomalyData(data);
     } catch (err) {
@@ -91,10 +87,9 @@ export default function App() {
     }
   };
 
-  const fetchProfiles = async (forceRefresh = false) => {
-    if (profiles && !forceRefresh) return;
+  const fetchProfiles = async () => {
     try {
-      const res = await fetch("/api/profiles");
+      const res = await fetch(`/api/profiles?_t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
       setProfiles(data);
     } catch (err) {
@@ -104,7 +99,7 @@ export default function App() {
 
   const fetchDatasets = async () => {
     try {
-      const res = await fetch("/api/datasets");
+      const res = await fetch(`/api/datasets?_t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
       setDatasetsInfo(data);
     } catch (err) {
@@ -112,19 +107,49 @@ export default function App() {
     }
   };
 
+  const runSimulation = async (startIdxArg, horizonArg) => {
+    setSimLoading(true);
+    try {
+      const res = await fetch("/api/forecast/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startIdx: startIdxArg, horizon: horizonArg }),
+      });
+      const data = await res.json();
+      setSimResult(data);
+    } catch (err) {
+      console.error("Simulation failed:", err);
+    } finally {
+      setSimLoading(false);
+    }
+  };
+
+  const refreshAllForActiveDataset = async (isInitialLoad = false) => {
+    if (isInitialLoad) setLoading(true);
+    try {
+      const { selectedK, safeStart } = await fetchOverview();
+      await Promise.all([
+        fetchDatasets(),
+        fetchProfiles(),
+        fetchAnomalies(anomWindow, selectedK),
+        runSimulation(safeStart, simHorizon),
+      ]);
+    } catch (err) {
+      console.error("Failed to refresh dashboard state:", err);
+    } finally {
+      if (isInitialLoad) setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchOverview();
-    fetchDatasets();
+    refreshAllForActiveDataset(true);
   }, []);
 
   useEffect(() => {
-    if (activeTab === "anomalies") {
+    if (!loading && activeTab === "anomalies") {
       fetchAnomalies(anomWindow, anomK);
-    } else if (activeTab === "explorer") {
-      fetchProfiles();
-      fetchDatasets();
     }
-  }, [activeTab, anomWindow, anomK]);
+  }, [anomWindow, anomK]);
 
   const handleSelectFile = (e) => {
     const file = e.target.files?.[0];
@@ -184,9 +209,7 @@ export default function App() {
       setUploadName("");
       setUploadDtCol("");
       setUploadTargetCol("");
-      await fetchOverview();
-      await fetchDatasets();
-      await fetchProfiles(true);
+      await refreshAllForActiveDataset(false);
     } catch (err) {
       setDatasetMsg({ type: "error", text: err.message });
     } finally {
@@ -211,9 +234,7 @@ export default function App() {
         type: "success",
         text: `Switched active dataset to "${data.registry.active_name}" and retrained forecasting & anomaly detection models.`,
       });
-      await fetchOverview();
-      await fetchDatasets();
-      await fetchProfiles(true);
+      await refreshAllForActiveDataset(false);
     } catch (err) {
       setDatasetMsg({ type: "error", text: err.message });
     } finally {
@@ -222,20 +243,7 @@ export default function App() {
   };
 
   const handleRunSimulation = async () => {
-    setSimLoading(true);
-    try {
-      const res = await fetch("/api/forecast/simulate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startIdx: simStartIdx, horizon: simHorizon }),
-      });
-      const data = await res.json();
-      setSimResult(data);
-    } catch (err) {
-      console.error("Simulation failed:", err);
-    } finally {
-      setSimLoading(false);
-    }
+    await runSimulation(simStartIdx, simHorizon);
   };
 
   const handleRunPipeline = async (forceTrain = false) => {
@@ -246,8 +254,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ forceTrain }),
       });
-      await fetchOverview();
-      if (activeTab === "anomalies") await fetchAnomalies(anomWindow, anomK);
+      await refreshAllForActiveDataset(false);
     } catch (err) {
       console.error("Pipeline run failed:", err);
     } finally {
@@ -366,8 +373,15 @@ export default function App() {
             Leak-free XGBoost forecasting paired with past-only Rolling Median + MAD dynamic thresholds
             (k={detectorCfg.sensitivity_k}, {detectorCfg.window_size}h window, event grouping &amp; controlled re-baselining).
           </p>
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
             <span className="badge badge-info">Active Dataset: {activeDatasetName}</span>
+            {validation?.file_info?.time_span_start && (
+              <span className="badge badge-success">
+                {String(validation.file_info.time_span_start).slice(0, 10)} →{" "}
+                {String(validation.file_info.time_span_end).slice(0, 10)} (
+                {totalHourlyRecords.toLocaleString()} hrs)
+              </span>
+            )}
           </div>
         </div>
 

@@ -137,7 +137,8 @@ def cmd_simulate(start_idx: int, horizon: int) -> None:
 
 def cmd_profiles() -> None:
     loader = DataLoader()
-    df = pd.read_csv(loader.processed_csv_path)
+    df_raw = loader.process_and_save()
+    df = Preprocessor().clean_hourly_data(df_raw)
     df["Datetime"] = pd.to_datetime(df["Datetime"])
     df["hour"] = df["Datetime"].dt.hour
     df["dow"] = df["Datetime"].dt.day_name()
@@ -145,6 +146,8 @@ def cmd_profiles() -> None:
     diurnal = (
         df.groupby("hour")["Global_active_power"]
         .agg(["mean", "median"])
+        .reindex(range(24))
+        .fillna(0.0)
         .reset_index()
     )
     dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -152,11 +155,14 @@ def cmd_profiles() -> None:
         df.groupby("dow")["Global_active_power"]
         .mean()
         .reindex(dow_order)
+        .fillna(0.0)
         .reset_index()
     )
 
     out = {
         "total_rows": int(len(df)),
+        "start_date": str(df["Datetime"].min()),
+        "end_date": str(df["Datetime"].max()),
         "diurnal": [
             {"hour": int(r["hour"]), "mean": round(float(r["mean"]), 4), "median": round(float(r["median"]), 4)}
             for _, r in diurnal.iterrows()

@@ -163,7 +163,11 @@ class AdaptiveAnomalyDetector:
                     thresh_t = self._effective_threshold(raw_mad, s_t, a_t, p_t, med=med, scale=scale)
                     score_t = (r_t - med) / scale
                 else:
-                    thresh_t = np.nan
+                    init_scale = 1.4826 * max(r_t, self.config.eps)
+                    raw_mad = r_t + self.config.sensitivity * init_scale
+                    thresh_t = self._effective_threshold(
+                        raw_mad, s_t, a_t, p_t, med=r_t, scale=init_scale
+                    )
                     score_t = 0.0
                 thresholds[i] = thresh_t
                 scores[i] = score_t

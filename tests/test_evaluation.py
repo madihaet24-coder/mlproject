@@ -65,8 +65,9 @@ def test_k_sensitivity_sweep_selects_valid_k(synthetic_hourly_df):
 
 
 def test_synthetic_injection_supports_compact_custom_test_split(synthetic_hourly_df):
-    compact_test = synthetic_hourly_df.iloc[:120].copy()
-    inj = SyntheticAnomalyInjector(SyntheticScenarioConfig(random_seed=42))
-    df_inj, events_df = inj.inject_scenarios(compact_test)
-    assert not events_df.empty
-    assert df_inj["ground_truth_label"].sum() == events_df["duration_hours"].sum()
+    for length in (45, 120):
+        compact_test = synthetic_hourly_df.iloc[:length].copy()
+        inj = SyntheticAnomalyInjector(SyntheticScenarioConfig(random_seed=42))
+        df_inj, events_df = inj.inject_scenarios(compact_test)
+        assert not events_df.empty
+        assert df_inj["ground_truth_label"].sum() == events_df["duration_hours"].sum()

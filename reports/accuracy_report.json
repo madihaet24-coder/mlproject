@@ -1,5 +1,5 @@
 {
-  "report_generated_at": "2026-11-20T13:33:32.046283",
+  "report_generated_at": "2026-11-20T13:48:36.696386",
   "model_architecture": "XGBoost Regressor (Single Model, No Ensembles)",
   "feature_count": 22,
   "features": [

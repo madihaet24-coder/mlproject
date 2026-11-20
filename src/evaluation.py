@@ -29,11 +29,13 @@ class SyntheticAnomalyInjector:
         df_out["ground_truth_label"] = 0
         df_out["ground_truth_scenario"] = "normal"
 
-        if n < 60:
+        if n < 20:
             raise ValueError(f"Test stream too short ({n} rows) for synthetic scenario injection.")
 
-        warmup = 200 if n >= 300 else max(24, n // 5)
-        pad = 12 if n >= 300 else 2
+        warmup = 200 if n >= 300 else (max(24, n // 5) if n >= 60 else max(4, n // 5))
+        pad = 12 if n >= 300 else (2 if n >= 60 else 1)
+        n_temp = self.config.n_temp_spikes if n >= 60 else 1
+        n_rep = self.config.n_repeated_spikes if n >= 60 else 1
         events: List[Dict[str, Any]] = []
         event_id = 1
         occupied = np.zeros(n, dtype=bool)
@@ -46,7 +48,6 @@ class SyntheticAnomalyInjector:
                 if not occupied[max(0, start - pad) : min(n, start + length + pad)].any():
                     occupied[start : start + length] = True
                     return start
-            # Compact fallback without pad when stream is very short
             for start in range(warmup, max(warmup + 1, n - length)):
                 if not occupied[start : start + length].any():
                     occupied[start : start + length] = True
@@ -54,7 +55,7 @@ class SyntheticAnomalyInjector:
             raise RuntimeError("Could not find non-overlapping slot for synthetic scenario.")
 
         # 1. Temporary Spikes (2 hours each)
-        for _ in range(self.config.n_temp_spikes):
+        for _ in range(n_temp):
             dur = 2
             s_idx = _find_free_slot(dur)
             spike_add = float(rng.uniform(3.5, 5.5))
@@ -76,7 +77,7 @@ class SyntheticAnomalyInjector:
         dur_shift = (
             min(self.config.sustained_shift_hours, max(12, n // 15))
             if n >= 300
-            else min(self.config.sustained_shift_hours, max(4, n // 15))
+            else min(self.config.sustained_shift_hours, max(2, n // 15 if n >= 60 else n // 10))
         )
         s_idx = _find_free_slot(dur_shift)
         df_out.loc[s_idx : s_idx + dur_shift - 1, target_col] += 2.8
@@ -94,7 +95,7 @@ class SyntheticAnomalyInjector:
         event_id += 1
 
         # 3. Repeated Spikes (periodic 2-hour bursts)
-        for _ in range(self.config.n_repeated_spikes):
+        for _ in range(n_rep):
             dur = 2
             s_idx = _find_free_slot(dur)
             df_out.loc[s_idx : s_idx + dur - 1, target_col] += float(rng.uniform(3.2, 4.8))
@@ -112,7 +113,10 @@ class SyntheticAnomalyInjector:
             event_id += 1
 
         # 4. Sudden Drops (near-zero outage during active consumption hours)
-        dur_drop = min(self.config.sudden_drop_hours, 12 if n >= 300 else max(3, n // 20))
+        dur_drop = min(
+            self.config.sudden_drop_hours,
+            12 if n >= 300 else (max(3, n // 20) if n >= 60 else max(2, n // 12)),
+        )
         best_drop_start = None
         best_drop_score = -1.0
         drop_high = max(warmup + 1, n - dur_drop - pad)
