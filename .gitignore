@@ -45,6 +45,9 @@ Thumbs.db
 # Large dataset raw files (preserve scripts/configs)
 data/raw/*.zip
 data/raw/*.txt
+data/raw/uploads/
+data/processed/custom/
+data/processed/active_dataset.json
 # Keep processed sample or gitkeep
 !data/raw/.gitkeep
 !data/processed/.gitkeep

@@ -9,6 +9,7 @@ import {
   Download,
   Play,
   RefreshCw,
+  Upload,
 } from "lucide-react";
 import { ForecastLineChart, ResidualThresholdChart, SimpleBarChart } from "./components/Charts";
 
@@ -50,6 +51,14 @@ export default function App() {
   const [simLoading, setSimLoading] = useState(false);
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [datasetsInfo, setDatasetsInfo] = useState({ active_id: "uci_default", datasets: [] });
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadName, setUploadName] = useState("");
+  const [uploadDtCol, setUploadDtCol] = useState("");
+  const [uploadTargetCol, setUploadTargetCol] = useState("");
+  const [uploadPreview, setUploadPreview] = useState(null);
+  const [datasetBusy, setDatasetBusy] = useState(false);
+  const [datasetMsg, setDatasetMsg] = useState(null);
 
   const fetchOverview = async () => {
     setLoading(true);
@@ -59,6 +68,9 @@ export default function App() {
       setOverview(data);
       const selectedK = data?.evaluation?.detector_config?.sensitivity_k;
       if (selectedK !== undefined) setAnomK(selectedK);
+      const totalHrs = data?.validation?.file_info?.total_hourly_records || 34589;
+      const safeStart = Math.max(180, Math.min(totalHrs - 48, Math.floor(totalHrs * 0.85)));
+      setSimStartIdx(safeStart);
     } catch (err) {
       console.error("Failed to fetch overview:", err);
     } finally {
@@ -79,8 +91,8 @@ export default function App() {
     }
   };
 
-  const fetchProfiles = async () => {
-    if (profiles) return;
+  const fetchProfiles = async (forceRefresh = false) => {
+    if (profiles && !forceRefresh) return;
     try {
       const res = await fetch("/api/profiles");
       const data = await res.json();
@@ -90,8 +102,19 @@ export default function App() {
     }
   };
 
+  const fetchDatasets = async () => {
+    try {
+      const res = await fetch("/api/datasets");
+      const data = await res.json();
+      setDatasetsInfo(data);
+    } catch (err) {
+      console.error("Failed to fetch datasets:", err);
+    }
+  };
+
   useEffect(() => {
     fetchOverview();
+    fetchDatasets();
   }, []);
 
   useEffect(() => {
@@ -99,8 +122,104 @@ export default function App() {
       fetchAnomalies(anomWindow, anomK);
     } else if (activeTab === "explorer") {
       fetchProfiles();
+      fetchDatasets();
     }
   }, [activeTab, anomWindow, anomK]);
+
+  const handleSelectFile = (e) => {
+    const file = e.target.files?.[0];
+    setDatasetMsg(null);
+    if (!file) {
+      setUploadFile(null);
+      setUploadPreview(null);
+      return;
+    }
+    setUploadFile(file);
+    if (!uploadName) {
+      setUploadName(file.name.replace(/\.[^.]+$/, ""));
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = String(ev.target?.result || "");
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      setUploadPreview({
+        content: text,
+        previewLines: lines.slice(0, 4),
+        totalLines: lines.length,
+      });
+    };
+    reader.readAsText(file);
+  };
+
+  const handleUploadDataset = async () => {
+    if (!uploadFile || !uploadPreview?.content) {
+      setDatasetMsg({ type: "error", text: "Please choose a CSV or TXT electricity dataset first." });
+      return;
+    }
+    setDatasetBusy(true);
+    setDatasetMsg(null);
+    try {
+      const res = await fetch("/api/datasets/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: uploadFile.name,
+          name: uploadName.trim() || uploadFile.name,
+          content: uploadPreview.content,
+          datetimeCol: uploadDtCol.trim(),
+          targetCol: uploadTargetCol.trim(),
+          autoRetrain: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Upload and retraining failed.");
+      }
+      setDatasetMsg({
+        type: "success",
+        text: `Ingested "${data.ingested.name}" (${data.ingested.rows.toLocaleString()} hourly records), retrained XGBoost, and updated evaluation reports.`,
+      });
+      setUploadFile(null);
+      setUploadPreview(null);
+      setUploadName("");
+      setUploadDtCol("");
+      setUploadTargetCol("");
+      await fetchOverview();
+      await fetchDatasets();
+      await fetchProfiles(true);
+    } catch (err) {
+      setDatasetMsg({ type: "error", text: err.message });
+    } finally {
+      setDatasetBusy(false);
+    }
+  };
+
+  const handleActivateDataset = async (datasetId) => {
+    setDatasetBusy(true);
+    setDatasetMsg(null);
+    try {
+      const res = await fetch("/api/datasets/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ datasetId, retrain: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to switch dataset.");
+      }
+      setDatasetMsg({
+        type: "success",
+        text: `Switched active dataset to "${data.registry.active_name}" and retrained forecasting & anomaly detection models.`,
+      });
+      await fetchOverview();
+      await fetchDatasets();
+      await fetchProfiles(true);
+    } catch (err) {
+      setDatasetMsg({ type: "error", text: err.message });
+    } finally {
+      setDatasetBusy(false);
+    }
+  };
 
   const handleRunSimulation = async () => {
     setSimLoading(true);
@@ -157,6 +276,13 @@ export default function App() {
   const validation = overview?.validation || {};
   const accReport = overview?.accuracy || {};
   const modelMeta = overview?.modelMeta || {};
+  const activeDatasetName =
+    overview?.activeDataset?.name ||
+    datasetsInfo?.active_name ||
+    "UCI Household Electric Power (Default)";
+  const totalHourlyRecords = validation?.file_info?.total_hourly_records || 34589;
+  const simMinIdx = Math.max(180, Math.floor(totalHourlyRecords * 0.85));
+  const simMaxIdx = Math.max(simMinIdx + 1, totalHourlyRecords - 48);
 
   const filteredAnomalies = (anomalyData.rows || []).filter(
     (r) => r.is_anomaly && (anomFilter === "All" || r.anomaly_type === anomFilter)
@@ -240,6 +366,9 @@ export default function App() {
             Leak-free XGBoost forecasting paired with past-only Rolling Median + MAD dynamic thresholds
             (k={detectorCfg.sensitivity_k}, {detectorCfg.window_size}h window, event grouping &amp; controlled re-baselining).
           </p>
+          <div style={{ marginTop: 10 }}>
+            <span className="badge badge-info">Active Dataset: {activeDatasetName}</span>
+          </div>
         </div>
 
         {loading ? (
@@ -412,6 +541,138 @@ export default function App() {
             {/* EXPLORER TAB */}
             {activeTab === "explorer" && (
               <>
+                <div className="card">
+                  <div className="card-header">
+                    <div>
+                      <div className="card-title">Add New Dataset for Retraining &amp; Evaluation</div>
+                      <div className="card-subtitle">
+                        Upload any CSV/TXT electricity dataset (≥300 hourly records or sub-hourly readings);
+                        XGBoost retraining, k-sweep, and evaluation run automatically.
+                      </div>
+                    </div>
+                    <a className="btn btn-outline" href="/api/datasets/template">
+                      <Download size={15} />
+                      Sample CSV Template
+                    </a>
+                  </div>
+
+                  {datasetMsg && (
+                    <div className={`alert-banner ${datasetMsg.type}`}>{datasetMsg.text}</div>
+                  )}
+
+                  <div className="panel-grid equal-two" style={{ marginBottom: 14 }}>
+                    <div className="upload-box">
+                      <div className="input-group" style={{ marginBottom: 10 }}>
+                        <label>Select CSV or TXT Dataset File</label>
+                        <input
+                          type="file"
+                          accept=".csv,.txt"
+                          onChange={handleSelectFile}
+                          disabled={datasetBusy}
+                        />
+                      </div>
+                      {uploadPreview && (
+                        <div style={{ fontSize: 11, color: "#475569", overflowX: "auto" }}>
+                          <strong>Detected {uploadPreview.totalLines.toLocaleString()} lines:</strong>
+                          <pre style={{ marginTop: 4, fontFamily: "JetBrains Mono, monospace" }}>
+                            {uploadPreview.previewLines.join("\n")}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div className="input-group">
+                        <label>Dataset Display Name (Optional)</label>
+                        <input
+                          type="text"
+                          className="text-input"
+                          placeholder="e.g., Smart Meter Apartment B"
+                          value={uploadName}
+                          onChange={(e) => setUploadName(e.target.value)}
+                          disabled={datasetBusy}
+                        />
+                      </div>
+                      <div className="panel-grid equal-two" style={{ marginBottom: 0 }}>
+                        <div className="input-group">
+                          <label>Datetime Column (Blank = Auto)</label>
+                          <input
+                            type="text"
+                            className="text-input"
+                            placeholder="Datetime / timestamp"
+                            value={uploadDtCol}
+                            onChange={(e) => setUploadDtCol(e.target.value)}
+                            disabled={datasetBusy}
+                          />
+                        </div>
+                        <div className="input-group">
+                          <label>Target Power Column (Blank = Auto)</label>
+                          <input
+                            type="text"
+                            className="text-input"
+                            placeholder="Global_active_power / kWh"
+                            value={uploadTargetCol}
+                            onChange={(e) => setUploadTargetCol(e.target.value)}
+                            disabled={datasetBusy}
+                          />
+                        </div>
+                      </div>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleUploadDataset}
+                        disabled={datasetBusy || !uploadFile}
+                      >
+                        <Upload size={16} />
+                        {datasetBusy ? "Ingesting, Retraining & Evaluating..." : "Upload, Retrain XGBoost & Evaluate"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {datasetsInfo?.datasets?.length > 0 && (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Registered Dataset</th>
+                            <th>Records</th>
+                            <th>Date Coverage</th>
+                            <th>Status / Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {datasetsInfo.datasets.map((ds) => {
+                            const isActive = ds.id === datasetsInfo.active_id;
+                            return (
+                              <tr key={ds.id}>
+                                <td><strong>{ds.name}</strong></td>
+                                <td>{Number(ds.rows || 0).toLocaleString()} hrs</td>
+                                <td>
+                                  {String(ds.start_date || "").slice(0, 10)} →{" "}
+                                  {String(ds.end_date || "").slice(0, 10)}
+                                </td>
+                                <td>
+                                  {isActive ? (
+                                    <span className="badge badge-success">Active</span>
+                                  ) : (
+                                    <button
+                                      className="btn btn-outline"
+                                      style={{ minHeight: 34, padding: "4px 12px", fontSize: 12 }}
+                                      onClick={() => handleActivateDataset(ds.id)}
+                                      disabled={datasetBusy}
+                                    >
+                                      Switch &amp; Retrain
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
                 <div className="kpi-grid">
                   <div className="kpi-card">
                     <div className="kpi-label">Hourly Records</div>
@@ -506,10 +767,10 @@ export default function App() {
                       <input
                         type="range"
                         className="range-input"
-                        min={29400}
-                        max={34500}
-                        step={24}
-                        value={simStartIdx}
+                        min={simMinIdx}
+                        max={simMaxIdx}
+                        step={Math.max(1, Math.min(24, Math.floor((simMaxIdx - simMinIdx) / 10)))}
+                        value={Math.min(simMaxIdx, Math.max(simMinIdx, simStartIdx))}
                         onChange={(e) => setSimStartIdx(Number(e.target.value))}
                       />
                     </div>

@@ -10,6 +10,7 @@ import logging
 import sys
 from pathlib import Path
 
+from src.data_loader import DataLoader
 from src.pipeline import AnomalyDetectionPipeline
 
 logging.basicConfig(
@@ -24,7 +25,26 @@ def main():
     parser = argparse.ArgumentParser(description="Adaptive Household Electricity Anomaly Detection Pipeline")
     parser.add_argument("--force-download", action="store_true", help="Force redownload of the UCI dataset")
     parser.add_argument("--force-train", action="store_true", help="Force retraining of the forecasting model")
+    parser.add_argument("--dataset", type=str, default=None, help="Path to a custom CSV/TXT dataset to ingest, retrain, and evaluate")
+    parser.add_argument("--dataset-name", type=str, default=None, help="Display name for the custom dataset")
+    parser.add_argument("--datetime-col", type=str, default=None, help="Timestamp column name in custom dataset")
+    parser.add_argument("--target-col", type=str, default=None, help="Consumption column name in custom dataset")
+    parser.add_argument("--reset-default-dataset", action="store_true", help="Switch back to the default UCI dataset and retrain")
     args = parser.parse_args()
+
+    loader = DataLoader()
+    if args.reset_default_dataset:
+        loader.activate_dataset("uci_default")
+        args.force_train = True
+    elif args.dataset:
+        loader.ingest_custom_dataset(
+            source_path=Path(args.dataset),
+            dataset_name=args.dataset_name,
+            datetime_col=args.datetime_col,
+            target_col=args.target_col,
+            activate=True,
+        )
+        args.force_train = True
 
     logger.info("Initializing Anomaly Detection Research Pipeline...")
     pipeline = AnomalyDetectionPipeline()

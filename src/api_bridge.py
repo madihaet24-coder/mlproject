@@ -169,6 +169,34 @@ def cmd_profiles() -> None:
     print(json.dumps(out))
 
 
+def cmd_datasets() -> None:
+    loader = DataLoader()
+    print(json.dumps(loader.list_datasets()))
+
+
+def cmd_ingest(
+    file_path: str,
+    name: str | None,
+    datetime_col: str | None,
+    target_col: str | None,
+) -> None:
+    loader = DataLoader()
+    entry = loader.ingest_custom_dataset(
+        source_path=file_path,
+        dataset_name=name,
+        datetime_col=datetime_col or None,
+        target_col=target_col or None,
+        activate=True,
+    )
+    print(json.dumps({"ingested": entry, "registry": loader.list_datasets()}))
+
+
+def cmd_activate(dataset_id: str) -> None:
+    loader = DataLoader()
+    registry = loader.activate_dataset(dataset_id)
+    print(json.dumps({"registry": registry}))
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -183,6 +211,16 @@ def main():
     det_p.add_argument("--limit", type=int, default=500)
 
     sub.add_parser("profiles")
+    sub.add_parser("datasets")
+
+    ing_p = sub.add_parser("ingest")
+    ing_p.add_argument("--file", required=True)
+    ing_p.add_argument("--name", default=None)
+    ing_p.add_argument("--datetime-col", default=None)
+    ing_p.add_argument("--target-col", default=None)
+
+    act_p = sub.add_parser("activate")
+    act_p.add_argument("--id", required=True)
 
     args = parser.parse_args()
     if args.cmd == "simulate":
@@ -191,6 +229,12 @@ def main():
         cmd_detect(args.k, args.window, args.limit)
     elif args.cmd == "profiles":
         cmd_profiles()
+    elif args.cmd == "datasets":
+        cmd_datasets()
+    elif args.cmd == "ingest":
+        cmd_ingest(args.file, args.name, args.datetime_col, args.target_col)
+    elif args.cmd == "activate":
+        cmd_activate(args.id)
 
 
 if __name__ == "__main__":

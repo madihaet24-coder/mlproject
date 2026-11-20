@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-20T13:23:18.366710",
+  "generated_at": "2026-11-20T13:33:06.827614",
   "detector_config": {
     "sensitivity_k": 4.0,
     "window_size": 168,
@@ -42,9 +42,9 @@
           "flagged_hours": 169,
           "flagged_rate_percent": 3.26,
           "grouped_events": 128,
-          "synthetic_precision": 0.8378,
+          "synthetic_precision": 0.8732,
           "synthetic_recall": 1.0,
-          "synthetic_f1": 0.9118,
+          "synthetic_f1": 0.9323,
           "synthetic_event_rate": 1.0,
           "synthetic_delay_hours": 0.0
         }
@@ -55,20 +55,20 @@
           "flagged_hours": 124,
           "flagged_rate_percent": 2.39,
           "grouped_events": 107,
-          "synthetic_precision": 0.8732,
+          "synthetic_precision": 0.9254,
           "synthetic_recall": 1.0,
-          "synthetic_f1": 0.9323,
+          "synthetic_f1": 0.9612,
           "synthetic_event_rate": 1.0,
           "synthetic_delay_hours": 0.0,
-          "selection_score": 1.1124
+          "selection_score": 1.1297
         },
         "test": {
           "flagged_hours": 108,
           "flagged_rate_percent": 2.08,
           "grouped_events": 86,
-          "synthetic_precision": 0.8857,
+          "synthetic_precision": 0.9254,
           "synthetic_recall": 1.0,
-          "synthetic_f1": 0.9394,
+          "synthetic_f1": 0.9612,
           "synthetic_event_rate": 1.0,
           "synthetic_delay_hours": 0.0
         }
@@ -79,20 +79,20 @@
           "flagged_hours": 73,
           "flagged_rate_percent": 1.41,
           "grouped_events": 63,
-          "synthetic_precision": 0.8986,
-          "synthetic_recall": 1.0,
-          "synthetic_f1": 0.9466,
+          "synthetic_precision": 0.9531,
+          "synthetic_recall": 0.9839,
+          "synthetic_f1": 0.9683,
           "synthetic_event_rate": 1.0,
-          "synthetic_delay_hours": 0.0,
-          "selection_score": 1.168
+          "synthetic_delay_hours": 0.11,
+          "selection_score": 1.1477
         },
         "test": {
           "flagged_hours": 76,
           "flagged_rate_percent": 1.46,
           "grouped_events": 59,
-          "synthetic_precision": 0.8986,
+          "synthetic_precision": 0.9538,
           "synthetic_recall": 1.0,
-          "synthetic_f1": 0.9466,
+          "synthetic_f1": 0.9764,
           "synthetic_event_rate": 1.0,
           "synthetic_delay_hours": 0.0
         }
@@ -103,20 +103,20 @@
           "flagged_hours": 48,
           "flagged_rate_percent": 0.93,
           "grouped_events": 43,
-          "synthetic_precision": 0.9118,
-          "synthetic_recall": 1.0,
-          "synthetic_f1": 0.9538,
+          "synthetic_precision": 0.9683,
+          "synthetic_recall": 0.9839,
+          "synthetic_f1": 0.976,
           "synthetic_event_rate": 1.0,
-          "synthetic_delay_hours": 0.0,
-          "selection_score": 1.1523
+          "synthetic_delay_hours": 0.11,
+          "selection_score": 1.1323
         },
         "test": {
           "flagged_hours": 55,
           "flagged_rate_percent": 1.06,
           "grouped_events": 45,
-          "synthetic_precision": 0.9254,
+          "synthetic_precision": 0.9688,
           "synthetic_recall": 1.0,
-          "synthetic_f1": 0.9612,
+          "synthetic_f1": 0.9841,
           "synthetic_event_rate": 1.0,
           "synthetic_delay_hours": 0.0
         }
@@ -135,21 +135,21 @@
         },
         "synthetic_benchmark": {
           "overall": {
-            "precision": 0.0944,
+            "precision": 0.0937,
             "recall": 1.0,
-            "f1_score": 0.1725,
-            "false_alarms_per_day": 2.7525,
+            "f1_score": 0.1713,
+            "false_alarms_per_day": 2.7756,
             "true_positives": 62,
-            "false_positives": 595,
+            "false_positives": 600,
             "false_negatives": 0
           },
           "controlled_benchmark": {
-            "precision": 0.6739,
+            "precision": 0.7126,
             "recall": 1.0,
-            "f1_score": 0.8052,
-            "false_alarms_per_day": 2.5899,
+            "f1_score": 0.8322,
+            "false_alarms_per_day": 2.2059,
             "true_positives": 62,
-            "false_positives": 30,
+            "false_positives": 25,
             "false_negatives": 0
           },
           "event_level": {
@@ -169,21 +169,21 @@
               "detected_samples": 8,
               "recall": 1.0
             },
-            "sudden_drop": {
-              "anomalous_samples": 12,
-              "detected_samples": 12,
-              "recall": 1.0
-            },
             "sustained_shift": {
               "anomalous_samples": 36,
               "detected_samples": 36,
               "recall": 1.0
+            },
+            "sudden_drop": {
+              "anomalous_samples": 12,
+              "detected_samples": 12,
+              "recall": 1.0
             }
           },
           "stream_counts": {
-            "total_flagged_hours": 657,
-            "flagged_rate_percent": 12.66,
-            "grouped_event_count": 473
+            "total_flagged_hours": 662,
+            "flagged_rate_percent": 12.76,
+            "grouped_event_count": 480
           }
         }
       },
@@ -197,28 +197,28 @@
         },
         "synthetic_benchmark": {
           "overall": {
-            "precision": 0.4806,
-            "recall": 1.0,
-            "f1_score": 0.6492,
-            "false_alarms_per_day": 0.3099,
-            "true_positives": 62,
-            "false_positives": 67,
-            "false_negatives": 0
+            "precision": 0.4692,
+            "recall": 0.9839,
+            "f1_score": 0.6354,
+            "false_alarms_per_day": 0.3192,
+            "true_positives": 61,
+            "false_positives": 69,
+            "false_negatives": 1
           },
           "controlled_benchmark": {
-            "precision": 0.8986,
-            "recall": 1.0,
-            "f1_score": 0.9466,
-            "false_alarms_per_day": 0.6043,
-            "true_positives": 62,
-            "false_positives": 7,
-            "false_negatives": 0
+            "precision": 0.9531,
+            "recall": 0.9839,
+            "f1_score": 0.9683,
+            "false_alarms_per_day": 0.2647,
+            "true_positives": 61,
+            "false_positives": 3,
+            "false_negatives": 1
           },
           "event_level": {
             "total_events": 9,
             "detected_events": 9,
             "event_detection_rate": 1.0,
-            "average_detection_delay_hours": 0.0
+            "average_detection_delay_hours": 0.11
           },
           "per_scenario": {
             "repeated_spikes": {
@@ -231,21 +231,21 @@
               "detected_samples": 8,
               "recall": 1.0
             },
-            "sudden_drop": {
-              "anomalous_samples": 12,
-              "detected_samples": 12,
-              "recall": 1.0
-            },
             "sustained_shift": {
               "anomalous_samples": 36,
               "detected_samples": 36,
               "recall": 1.0
+            },
+            "sudden_drop": {
+              "anomalous_samples": 12,
+              "detected_samples": 11,
+              "recall": 0.9167
             }
           },
           "stream_counts": {
-            "total_flagged_hours": 129,
-            "flagged_rate_percent": 2.49,
-            "grouped_event_count": 65
+            "total_flagged_hours": 130,
+            "flagged_rate_percent": 2.51,
+            "grouped_event_count": 70
           }
         }
       },
@@ -269,21 +269,21 @@
         },
         "synthetic_benchmark": {
           "overall": {
-            "precision": 0.0896,
+            "precision": 0.0882,
             "recall": 1.0,
-            "f1_score": 0.1645,
-            "false_alarms_per_day": 2.9139,
+            "f1_score": 0.1621,
+            "false_alarms_per_day": 2.9647,
             "true_positives": 62,
-            "false_positives": 630,
+            "false_positives": 641,
             "false_negatives": 0
           },
           "controlled_benchmark": {
-            "precision": 0.6392,
+            "precision": 0.6813,
             "recall": 1.0,
-            "f1_score": 0.7799,
-            "false_alarms_per_day": 3.1343,
+            "f1_score": 0.8105,
+            "false_alarms_per_day": 2.5874,
             "true_positives": 62,
-            "false_positives": 35,
+            "false_positives": 29,
             "false_negatives": 0
           },
           "event_level": {
@@ -303,21 +303,21 @@
               "detected_samples": 6,
               "recall": 1.0
             },
-            "sustained_shift": {
-              "anomalous_samples": 36,
-              "detected_samples": 36,
-              "recall": 1.0
-            },
             "sudden_drop": {
               "anomalous_samples": 12,
               "detected_samples": 12,
               "recall": 1.0
+            },
+            "sustained_shift": {
+              "anomalous_samples": 36,
+              "detected_samples": 36,
+              "recall": 1.0
             }
           },
           "stream_counts": {
-            "total_flagged_hours": 692,
-            "flagged_rate_percent": 13.34,
-            "grouped_event_count": 443
+            "total_flagged_hours": 703,
+            "flagged_rate_percent": 13.55,
+            "grouped_event_count": 448
           }
         }
       },
@@ -331,21 +331,21 @@
         },
         "synthetic_benchmark": {
           "overall": {
-            "precision": 0.4336,
+            "precision": 0.446,
             "recall": 1.0,
-            "f1_score": 0.6049,
-            "false_alarms_per_day": 0.3746,
+            "f1_score": 0.6169,
+            "false_alarms_per_day": 0.3561,
             "true_positives": 62,
-            "false_positives": 81,
+            "false_positives": 77,
             "false_negatives": 0
           },
           "controlled_benchmark": {
-            "precision": 0.8986,
+            "precision": 0.9538,
             "recall": 1.0,
-            "f1_score": 0.9466,
-            "false_alarms_per_day": 0.6269,
+            "f1_score": 0.9764,
+            "false_alarms_per_day": 0.2677,
             "true_positives": 62,
-            "false_positives": 7,
+            "false_positives": 3,
             "false_negatives": 0
           },
           "event_level": {
@@ -365,21 +365,21 @@
               "detected_samples": 6,
               "recall": 1.0
             },
-            "sustained_shift": {
-              "anomalous_samples": 36,
-              "detected_samples": 36,
-              "recall": 1.0
-            },
             "sudden_drop": {
               "anomalous_samples": 12,
               "detected_samples": 12,
               "recall": 1.0
+            },
+            "sustained_shift": {
+              "anomalous_samples": 36,
+              "detected_samples": 36,
+              "recall": 1.0
             }
           },
           "stream_counts": {
-            "total_flagged_hours": 143,
-            "flagged_rate_percent": 2.76,
-            "grouped_event_count": 70
+            "total_flagged_hours": 139,
+            "flagged_rate_percent": 2.68,
+            "grouped_event_count": 68
           }
         }
       },
@@ -395,21 +395,21 @@
   },
   "adaptive_detector": {
     "overall": {
-      "precision": 0.4336,
+      "precision": 0.446,
       "recall": 1.0,
-      "f1_score": 0.6049,
-      "false_alarms_per_day": 0.3746,
+      "f1_score": 0.6169,
+      "false_alarms_per_day": 0.3561,
       "true_positives": 62,
-      "false_positives": 81,
+      "false_positives": 77,
       "false_negatives": 0
     },
     "controlled_benchmark": {
-      "precision": 0.8986,
+      "precision": 0.9538,
       "recall": 1.0,
-      "f1_score": 0.9466,
-      "false_alarms_per_day": 0.6269,
+      "f1_score": 0.9764,
+      "false_alarms_per_day": 0.2677,
       "true_positives": 62,
-      "false_positives": 7,
+      "false_positives": 3,
       "false_negatives": 0
     },
     "event_level": {
@@ -427,49 +427,49 @@
       "repeated_spikes": {
         "anomalous_samples": 6,
         "detected_samples": 6,
-        "recall": 1.0
-      },
-      "sustained_shift": {
-        "anomalous_samples": 36,
-        "detected_samples": 36,
         "recall": 1.0
       },
       "sudden_drop": {
         "anomalous_samples": 12,
         "detected_samples": 12,
         "recall": 1.0
+      },
+      "sustained_shift": {
+        "anomalous_samples": 36,
+        "detected_samples": 36,
+        "recall": 1.0
       }
     },
     "stream_counts": {
-      "total_flagged_hours": 143,
-      "flagged_rate_percent": 2.76,
-      "grouped_event_count": 70
+      "total_flagged_hours": 139,
+      "flagged_rate_percent": 2.68,
+      "grouped_event_count": 68
     }
   },
   "fixed_baseline": {
     "overall": {
-      "precision": 0.513,
-      "recall": 0.9516,
-      "f1_score": 0.6667,
-      "false_alarms_per_day": 0.259,
-      "true_positives": 59,
-      "false_positives": 56,
-      "false_negatives": 3
+      "precision": 0.4865,
+      "recall": 0.871,
+      "f1_score": 0.6243,
+      "false_alarms_per_day": 0.2636,
+      "true_positives": 54,
+      "false_positives": 57,
+      "false_negatives": 8
     },
     "controlled_benchmark": {
-      "precision": 0.9672,
-      "recall": 0.9516,
-      "f1_score": 0.9593,
-      "false_alarms_per_day": 0.1791,
-      "true_positives": 59,
+      "precision": 0.9643,
+      "recall": 0.871,
+      "f1_score": 0.9153,
+      "false_alarms_per_day": 0.1784,
+      "true_positives": 54,
       "false_positives": 2,
-      "false_negatives": 3
+      "false_negatives": 8
     },
     "event_level": {
       "total_events": 9,
       "detected_events": 9,
       "event_detection_rate": 1.0,
-      "average_detection_delay_hours": 0.0
+      "average_detection_delay_hours": 0.11
     },
     "per_scenario": {
       "temporary_spike": {
@@ -482,21 +482,21 @@
         "detected_samples": 6,
         "recall": 1.0
       },
+      "sudden_drop": {
+        "anomalous_samples": 12,
+        "detected_samples": 4,
+        "recall": 0.3333
+      },
       "sustained_shift": {
         "anomalous_samples": 36,
         "detected_samples": 36,
         "recall": 1.0
-      },
-      "sudden_drop": {
-        "anomalous_samples": 12,
-        "detected_samples": 9,
-        "recall": 0.75
       }
     },
     "stream_counts": {
-      "total_flagged_hours": 115,
-      "flagged_rate_percent": 2.22,
-      "grouped_event_count": 64
+      "total_flagged_hours": 111,
+      "flagged_rate_percent": 2.14,
+      "grouped_event_count": 66
     },
     "calibrated_threshold_kwh": 1.5146
   },

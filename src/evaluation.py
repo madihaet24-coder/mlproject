@@ -29,19 +29,26 @@ class SyntheticAnomalyInjector:
         df_out["ground_truth_label"] = 0
         df_out["ground_truth_scenario"] = "normal"
 
-        if n < 300:
+        if n < 60:
             raise ValueError(f"Test stream too short ({n} rows) for synthetic scenario injection.")
 
+        warmup = 200 if n >= 300 else max(24, n // 5)
+        pad = 12 if n >= 300 else 2
         events: List[Dict[str, Any]] = []
         event_id = 1
         occupied = np.zeros(n, dtype=bool)
-        # Keep initial 200 hours clean for detector warm-up
-        occupied[:200] = True
+        occupied[:warmup] = True
 
         def _find_free_slot(length: int) -> int:
+            high = max(warmup + 1, n - length - pad)
             for _ in range(500):
-                start = int(rng.integers(200, max(201, n - length - 24)))
-                if not occupied[max(0, start - 12) : min(n, start + length + 12)].any():
+                start = int(rng.integers(warmup, high))
+                if not occupied[max(0, start - pad) : min(n, start + length + pad)].any():
+                    occupied[start : start + length] = True
+                    return start
+            # Compact fallback without pad when stream is very short
+            for start in range(warmup, max(warmup + 1, n - length)):
+                if not occupied[start : start + length].any():
                     occupied[start : start + length] = True
                     return start
             raise RuntimeError("Could not find non-overlapping slot for synthetic scenario.")
@@ -65,8 +72,12 @@ class SyntheticAnomalyInjector:
             )
             event_id += 1
 
-        # 2. Sustained Level Shift (36 hours)
-        dur_shift = min(self.config.sustained_shift_hours, max(12, n // 15))
+        # 2. Sustained Level Shift (36 hours, scaled down for compact streams)
+        dur_shift = (
+            min(self.config.sustained_shift_hours, max(12, n // 15))
+            if n >= 300
+            else min(self.config.sustained_shift_hours, max(4, n // 15))
+        )
         s_idx = _find_free_slot(dur_shift)
         df_out.loc[s_idx : s_idx + dur_shift - 1, target_col] += 2.8
         df_out.loc[s_idx : s_idx + dur_shift - 1, "ground_truth_label"] = 1
@@ -101,12 +112,13 @@ class SyntheticAnomalyInjector:
             event_id += 1
 
         # 4. Sudden Drops (near-zero outage during active consumption hours)
-        dur_drop = min(self.config.sudden_drop_hours, 12)
+        dur_drop = min(self.config.sudden_drop_hours, 12 if n >= 300 else max(3, n // 20))
         best_drop_start = None
         best_drop_score = -1.0
+        drop_high = max(warmup + 1, n - dur_drop - pad)
         for _ in range(120):
-            cand = int(rng.integers(200, max(201, n - dur_drop - 24)))
-            if occupied[max(0, cand - 12) : min(n, cand + dur_drop + 12)].any():
+            cand = int(rng.integers(warmup, drop_high))
+            if occupied[max(0, cand - pad) : min(n, cand + dur_drop + pad)].any():
                 continue
             window_vals = df_out.loc[cand : cand + dur_drop - 1, target_col]
             score_val = float(window_vals.min() + 0.25 * window_vals.mean())

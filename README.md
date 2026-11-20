@@ -5,7 +5,7 @@
 [![React 18](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Express-61DAFB.svg)](https://react.dev/)
 [![Webpack 5](https://img.shields.io/badge/Bundler-Webpack%205%20(No%20Vite)-blueviolet.svg)](https://webpack.js.org/)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost-orange.svg)](https://xgboost.readthedocs.io/)
-[![pytest](https://img.shields.io/badge/Tests-29%20passed-brightgreen.svg)](https://pytest.org/)
+[![pytest](https://img.shields.io/badge/Tests-32%20passed-brightgreen.svg)](https://pytest.org/)
 
 An end-to-end research and engineering framework for next-hour household electricity consumption forecasting and selective adaptive anomaly detection on the **UCI Individual Household Electric Power Consumption dataset**.
 
@@ -36,13 +36,13 @@ The system pairs a single reproducible **XGBoost** forecaster (22 strictly leak-
 4. **Mobile-Friendly React 18 + Express Dashboard (`http://localhost:5000`)**
    - **Responsive Navigation:** Sticky mobile header + fixed bottom tab bar on phones (`< 768px`), persistent sidebar on desktop (`>= 768px`).
    - **Overview:** Test MAE/RMSE/R², grouped events, flagged-hour reduction vs. legacy `k=3.0`, detector parameter summary, and Before-vs-After comparison table.
-   - **Dataset Explorer:** Hourly dataset statistics, 24-hour diurnal load profile, weekly consumption profile, and validation audit.
+   - **Dataset Explorer & Custom Dataset Upload:** Upload any CSV/TXT electricity dataset (≥300 hourly records or sub-hourly readings with automatic schema normalization and aggregation), switch between registered datasets, retrain XGBoost and re-evaluate automatically, download a sample CSV template, and inspect diurnal/weekly profiles.
    - **Forecast & Horizon Simulator:** Chronological split metrics and live interactive `12h / 24h / 48h` recursive rollout powered by `src/api_bridge.py`.
    - **Anomaly Studio:** Live sensitivity selector (`k = 3.0, 3.5, 4.0, 4.5`), interactive two-panel charts (consumption + anomalies, residual vs. MAD threshold), grouped events vs. hourly view toggle, and CSV exports.
    - **Benchmarks & Reports:** Validation $k$-sensitivity sweep table, Before-vs-After validation/test table, Adaptive MAD vs. Fixed Baseline comparison, and `.docx`/`.md`/`.json`/`.csv` downloads.
 
 5. **Automated Test Suite (`pytest`)**
-   - 29 unit and integration tests covering `?` parsing, hourly aggregation, chronological split integrity, zero future target leakage, model persistence, past-only MAD thresholds, $k$-sensitivity monotonicity, minimum residual floor, severe single-hour spike override, consecutive event grouping, and controlled re-baselining.
+   - 32 unit and integration tests covering `?` parsing, hourly aggregation, custom dataset ingestion and switching, chronological split integrity, zero future target leakage, model persistence, past-only MAD thresholds, $k$-sensitivity monotonicity, minimum residual floor, severe single-hour spike override, consecutive event grouping, and controlled re-baselining.
 
 ---
 
@@ -113,7 +113,7 @@ pip install -r requirements.txt
 ```powershell
 python -m pytest
 ```
-All 29 unit and integration tests pass.
+All 32 unit and integration tests pass.
 
 ### 3. Run Validation, ML Pipeline & Reports
 ```powershell
@@ -121,6 +121,12 @@ python validate_data.py
 python run_pipeline.py
 python generate_accuracy_report.py
 python generate_docx_report.py
+```
+
+To ingest, retrain, and evaluate on a custom CSV/TXT dataset from the CLI (or switch back to the default UCI dataset):
+```powershell
+python run_pipeline.py --dataset path\to\your_meter_data.csv --dataset-name "My Home Meter"
+python run_pipeline.py --reset-default-dataset
 ```
 
 Observed Test Partition Performance:

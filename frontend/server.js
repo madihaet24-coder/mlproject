@@ -9,9 +9,12 @@ const PORT = process.env.PORT || 5000;
 const ROOT_DIR = path.resolve(__dirname, "..");
 const REPORTS_DIR = path.join(ROOT_DIR, "reports");
 const MODELS_DIR = path.join(ROOT_DIR, "models");
+const DATA_DIR = path.join(ROOT_DIR, "data");
+const UPLOADS_DIR = path.join(DATA_DIR, "raw", "uploads");
+const ACTIVE_DATASET_FILE = path.join(DATA_DIR, "processed", "active_dataset.json");
 const DIST_DIR = path.join(__dirname, "dist");
 
-app.use(express.json());
+app.use(express.json({ limit: "60mb" }));
 app.use(express.static(DIST_DIR));
 
 function readJsonSafe(filePath) {
@@ -108,6 +111,7 @@ app.get("/api/overview", (req, res) => {
   const accuracy = readJsonSafe(path.join(REPORTS_DIR, "accuracy_report.json"));
   const validation = readJsonSafe(path.join(REPORTS_DIR, "data_validation_report.json"));
   const modelMeta = readJsonSafe(path.join(MODELS_DIR, "xgboost_forecaster_metadata.json"));
+  const activeDataset = readJsonSafe(ACTIVE_DATASET_FILE);
   const anomalies = parseAnomaliesCsv(300);
   const groupedEvents = parseGroupedEventsCsv();
 
@@ -116,6 +120,9 @@ app.get("/api/overview", (req, res) => {
     accuracy,
     validation,
     modelMeta,
+    activeDataset: activeDataset
+      ? { id: activeDataset.active_id, name: activeDataset.active_name }
+      : { id: "uci_default", name: "UCI Household Electric Power (Default)" },
     anomaliesSummary: {
       totalTestHours: anomalies.total,
       detectedCount: anomalies.anomalyCount,
@@ -220,6 +227,82 @@ app.post("/api/forecast/simulate", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Dataset registry & custom dataset management
+app.get("/api/datasets", async (req, res) => {
+  try {
+    const stdout = await runPython(["-m", "src.api_bridge", "datasets"]);
+    res.json(JSON.parse(stdout));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/datasets/upload", async (req, res) => {
+  const { filename, name, content, datetimeCol, targetCol, autoRetrain = true } = req.body || {};
+  if (!content || typeof content !== "string") {
+    return res.status(400).json({ error: "CSV/TXT file content is required." });
+  }
+
+  try {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    const safeBase = path.basename(filename || "custom_dataset.csv").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const savedPath = path.join(UPLOADS_DIR, `${Date.now()}_${safeBase}`);
+    fs.writeFileSync(savedPath, content, "utf-8");
+
+    const ingestArgs = ["-m", "src.api_bridge", "ingest", "--file", savedPath];
+    if (name && name.trim()) ingestArgs.push("--name", name.trim());
+    if (datetimeCol && datetimeCol.trim()) ingestArgs.push("--datetime-col", datetimeCol.trim());
+    if (targetCol && targetCol.trim()) ingestArgs.push("--target-col", targetCol.trim());
+
+    const ingestStdout = await runPython(ingestArgs, 120000);
+    const ingestResult = JSON.parse(ingestStdout);
+
+    if (autoRetrain) {
+      await runPython(["validate_data.py"], 180000);
+      await runPython(["run_pipeline.py", "--force-train"], 240000);
+      await runPython(["generate_accuracy_report.py"], 240000);
+    }
+
+    res.json({ status: "ok", ...ingestResult });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/datasets/activate", async (req, res) => {
+  const { datasetId, retrain = true } = req.body || {};
+  if (!datasetId) {
+    return res.status(400).json({ error: "datasetId is required." });
+  }
+  try {
+    const stdout = await runPython(["-m", "src.api_bridge", "activate", "--id", String(datasetId)]);
+    const result = JSON.parse(stdout);
+    if (retrain) {
+      await runPython(["validate_data.py"], 180000);
+      await runPython(["run_pipeline.py", "--force-train"], 240000);
+      await runPython(["generate_accuracy_report.py"], 240000);
+    }
+    res.json({ status: "ok", ...result });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/datasets/template", (req, res) => {
+  const lines = ["Datetime,Global_active_power"];
+  const start = new Date("2025-01-01T00:00:00Z");
+  for (let i = 0; i < 720; i += 1) {
+    const dt = new Date(start.getTime() + i * 3600 * 1000);
+    const hour = dt.getUTCHours();
+    const base = 1.15 + 0.75 * Math.sin((2 * Math.PI * (hour - 7)) / 24);
+    const val = Math.max(0.25, base + ((i % 7) - 3) * 0.04).toFixed(4);
+    lines.push(`${dt.toISOString().slice(0, 19).replace("T", " ")},${val}`);
+  }
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="sample_custom_electricity_dataset.csv"');
+  res.send(lines.join("\n"));
 });
 
 // Trigger full pipeline re-run

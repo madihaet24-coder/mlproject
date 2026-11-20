@@ -2,12 +2,14 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
+CUSTOM_DATA_DIR = PROCESSED_DATA_DIR / "custom"
+ACTIVE_DATASET_FILE = PROCESSED_DATA_DIR / "active_dataset.json"
 MODELS_DIR = BASE_DIR / "models"
 REPORTS_DIR = BASE_DIR / "reports"
 
@@ -29,6 +31,7 @@ class DataConfig:
     raw_zip_filename: str = "household_power_consumption.zip"
     raw_txt_filename: str = "household_power_consumption.txt"
     processed_filename: str = "hourly_electricity_consumption.csv"
+    custom_csv_path: Optional[str] = None
 
 
 @dataclass
